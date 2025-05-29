@@ -1,0 +1,229 @@
+#!/bin/bash
+
+# Fungsi untuk menampilkan informasi jaringan
+informasi_jaringan() {
+    echo ""
+    echo "========================================="
+    echo "           INFORMASI JARINGAN"
+    echo "========================================="
+
+    # 1. Cek Koneksi Internet
+    echo -n "Status Koneksi Internet: "
+    # Ping ke DNS Google (8.8.8.8) dengan timeout 1 detik untuk 1 paket
+    # Output standar dan error dialihkan ke /dev/null agar tidak tampil
+    if ping -c 1 -W 1 8.8.8.8 &> /dev/null; then
+        echo "Terhubung"
+    # Jika gagal, coba ping ke DNS Cloudflare (1.1.1.1) sebagai fallback
+    elif ping -c 1 -W 1 1.1.1.1 &> /dev/null; then
+        echo "Terhubung"
+    else
+        echo "Putus / Tidak Terhubung"
+    fi
+    echo ""
+
+    # 2. Tampilkan Alamat IP Lokal, Gateway, DNS
+    echo "--- Konfigurasi Jaringan Lokal ---"
+    echo "Alamat IP Lokal (IPv4):"
+    # Menampilkan alamat IPv4 global (bukan loopback) beserta nama interface-nya
+    # awk digunakan untuk memformat output, sed untuk menghapus notasi CIDR (misal, /24)
+    ip -4 addr show scope global | awk '/inet / {print "  Interface " $NF ": " $2}' | sed 's|/.*||'
+    
+    # hostname -I bisa menampilkan IP lokal yang dapat dirutekan dengan mudah
+    LOCAL_IPS_HOSTNAME=$(hostname -I 2>/dev/null | awk '{print $1}') # Ambil IP pertama jika ada banyak
+    if [ -n "$LOCAL_IPS_HOSTNAME" ]; then
+        echo "  (Alamat IP utama via 'hostname -I': $LOCAL_IPS_HOSTNAME)"
+    fi
+    echo ""
+
+    echo "Gateway Utama:"
+    # Mencari gateway default dari output 'ip route'
+    GATEWAY=$(ip route | grep '^default' | awk '{print $3}')
+    if [ -n "$GATEWAY" ]; then
+        echo "  $GATEWAY"
+    else
+        echo "  Tidak ditemukan gateway default."
+    fi
+    echo ""
+
+    echo "DNS Server (dari /etc/resolv.conf):"
+    # Menampilkan server DNS yang tercantum di /etc/resolv.conf
+    if [ -f /etc/resolv.conf ]; then
+        grep "^nameserver" /etc/resolv.conf | awk '{print "  " $2}'
+        if ! grep -q "^nameserver" /etc/resolv.conf; then
+            echo "  Tidak ada nameserver yang dikonfigurasi di /etc/resolv.conf."
+        fi
+    else
+        echo "  File /etc/resolv.conf tidak ditemukan."
+    fi
+    echo ""
+
+    # 3. Tampilkan IP Publik dan Lokasi
+    echo "--- IP Publik & Lokasi ---"
+    PUBLIC_IP=""
+    # Mencoba mengambil IP publik menggunakan beberapa layanan, curl lebih diutamakan jika ada
+    echo "Mencoba mengambil IP Publik..."
+    if command -v curl &> /dev/null; then
+        PUBLIC_IP=$(curl -s --max-time 5 ifconfig.me || curl -s --max-time 5 api.ipify.org || curl -s --max-time 5 icanhazip.com)
+    elif command -v wget &> /dev/null; then
+        PUBLIC_IP=$(wget -qO- --timeout=5 ifconfig.me || wget -qO- --timeout=5 api.ipify.org || wget -qO- --timeout=5 icanhazip.com)
+    fi
+
+    if [ -n "$PUBLIC_IP" ]; then
+        echo "IP Publik Anda adalah: $PUBLIC_IP"
+        echo "Mencoba mengambil informasi lokasi berdasarkan IP Publik (menggunakan wget/curl)..."
+
+        # Mencoba mengambil informasi lokasi dari ipinfo.io
+        # Format: Kota, Wilayah, Negara, ISP (Org)
+        LOCATION_INFO=""
+        # Anda bisa mengganti string token di bawah ini jika Anda memiliki token API dari ipinfo.io
+        TOKEN_IPINFO="" # Ganti dengan token Anda jika ada, atau biarkan kosong
+        URL_IPINFO="ipinfo.io/$PUBLIC_IP"
+        if [ -n "$TOKEN_IPINFO" ]; then
+            URL_IPINFO="$URL_IPINFO?token=$TOKEN_IPINFO"
+        fi
+
+        if command -v wget &> /dev/null; then
+            LOCATION_INFO=$(wget -qO- --timeout=7 "$URL_IPINFO")
+        elif command -v curl &> /dev/null; then
+            LOCATION_INFO=$(curl -s --max-time 7 "$URL_IPINFO")
+        fi
+        
+        # Parsing JSON sederhana dari ipinfo.io (membutuhkan grep dengan PCRE -oP)
+        # Pastikan grep mendukung -P (PCRE), umum di Linux modern.
+        CITY_IO=$(echo "$LOCATION_INFO" | grep -oP '"city": "\K[^"]*')
+        REGION_IO=$(echo "$LOCATION_INFO" | grep -oP '"region": "\K[^"]*')
+        COUNTRY_IO=$(echo "$LOCATION_INFO" | grep -oP '"country": "\K[^"]*')
+        ORG_IO=$(echo "$LOCATION_INFO" | grep -oP '"org": "\K[^"]*')
+        POSTAL_IO=$(echo "$LOCATION_INFO" | grep -oP '"postal": "\K[^"]*')
+        TIMEZONE_IO=$(echo "$LOCATION_INFO" | grep -oP '"timezone": "\K[^"]*')
+
+        if [ -n "$CITY_IO" ] || [ -n "$REGION_IO" ] || [ -n "$COUNTRY_IO" ]; then
+            echo "  Detail Lokasi (dari ipinfo.io):"
+            echo "  Kota                            : ${CITY_IO:-Tidak dapat ditentukan}"
+            echo "  Wilayah (Region)                : ${REGION_IO:-Tidak dapat ditentukan}"
+            echo "  Negara                          : ${COUNTRY_IO:-Tidak dapat ditentukan}"
+            echo "  Kode Pos                        : ${POSTAL_IO:-Tidak dapat ditentukan}"
+            echo "  Zona Waktu                      : ${TIMEZONE_IO:-Tidak dapat ditentukan}"
+            echo "  Organisasi/ISP                  : ${ORG_IO:-Tidak dapat ditentukan}"
+        else
+            echo "  Tidak dapat mengambil detail lokasi dari ipinfo.io atau format respons tidak dikenali. Mencoba alternatif..."
+            # Alternatif menggunakan ip-api.com (format line)
+            LOCATION_ALT=""
+            if command -v wget &> /dev/null; then
+                LOCATION_ALT=$(wget -qO- --timeout=7 "http://ip-api.com/line/${PUBLIC_IP}?fields=status,message,country,regionName,city,zip,timezone,isp,org")
+            elif command -v curl &> /dev/null; then
+                 LOCATION_ALT=$(curl -s --max-time 7 "http://ip-api.com/line/${PUBLIC_IP}?fields=status,message,country,regionName,city,zip,timezone,isp,org")
+            fi
+
+            if echo "$LOCATION_ALT" | grep -q -E "^status\s*success"; then # Cek status sukses
+                echo "  Detail Lokasi (dari ip-api.com):"
+                COUNTRY_ALT=$(echo "$LOCATION_ALT" | awk -F'\t' '/^country$/ {getline; print $0}')
+                REGION_ALT=$(echo "$LOCATION_ALT" | awk -F'\t' '/^regionName$/ {getline; print $0}')
+                CITY_ALT=$(echo "$LOCATION_ALT" | awk -F'\t' '/^city$/ {getline; print $0}')
+                ZIP_ALT=$(echo "$LOCATION_ALT" | awk -F'\t' '/^zip$/ {getline; print $0}')
+                TIMEZONE_ALT=$(echo "$LOCATION_ALT" | awk -F'\t' '/^timezone$/ {getline; print $0}')
+                ISP_ALT=$(echo "$LOCATION_ALT" | awk -F'\t' '/^isp$/ {getline; print $0}')
+                ORG_ALT=$(echo "$LOCATION_ALT" | awk -F'\t' '/^org$/ {getline; print $0}')
+
+
+                echo "  Kota                            : ${CITY_ALT:-Tidak dapat ditentukan}"
+                echo "  Wilayah (Region)                : ${REGION_ALT:-Tidak dapat ditentukan}"
+                echo "  Negara                          : ${COUNTRY_ALT:-Tidak dapat ditentukan}"
+                echo "  Kode Pos                        : ${ZIP_ALT:-Tidak dapat ditentukan}"
+                echo "  Zona Waktu                      : ${TIMEZONE_ALT:-Tidak dapat ditentukan}"
+                echo "  ISP                             : ${ISP_ALT:-Tidak dapat ditentukan}"
+                echo "  Organisasi                      : ${ORG_ALT:-Tidak dapat ditentukan}"
+            else
+                echo "  Gagal mengambil detail lokasi dari ipinfo.io maupun ip-api.com."
+                API_MSG=$(echo "$LOCATION_ALT" | awk -F'\t' '/^message$/ {getline; print $0}')
+                if [ -n "$API_MSG" ]; then
+                    echo "  Pesan dari ip-api.com: $API_MSG"
+                fi
+            fi
+        fi
+    else
+        echo "Tidak dapat mengambil IP Publik. Pastikan wget atau curl terinstall dan Anda terhubung ke internet."
+    fi
+    echo "========================================="
+    echo ""
+}
+
+# Fungsi untuk menampilkan informasi user
+informasi_user() {
+    echo ""
+    echo "========================================="
+    echo "             INFORMASI USER"
+    echo "========================================="
+    
+    # Mendapatkan nama user saat ini. `id -un` lebih portabel daripada `whoami`
+    CURRENT_USER=$(id -un)
+    
+    echo "Nama User Saat Ini                : $CURRENT_USER"
+    echo "User ID (UID)                     : $(id -u $CURRENT_USER)"
+    echo "Group ID (GID Utama)              : $(id -g $CURRENT_USER)"
+    echo "Nama Grup Utama                 : $(id -gn $CURRENT_USER)"
+    # Menampilkan semua grup dimana user menjadi anggota
+    echo "Anggota Grup Lain                 : $(groups $CURRENT_USER)"
+    # Menampilkan direktori home user saat ini (menggunakan variabel $HOME lebih portabel)
+    echo "Direktori Home                    : $HOME"
+    # Menampilkan shell login user saat ini (menggunakan variabel $SHELL lebih portabel)
+    echo "Shell Login                       : $SHELL"
+    echo "Terminal Saat Ini                 : $(tty)"
+    echo ""
+    
+    echo "--- Informasi Sesi Login Saat Ini (perintah 'w') ---"
+    # Perintah 'w' menampilkan siapa saja yang login dan apa yang sedang mereka kerjakan
+    # Menyaring hanya untuk user saat ini
+    if command -v w &> /dev/null; then
+        w $CURRENT_USER
+    else
+        echo "  Perintah 'w' tidak ditemukan."
+    fi
+    echo ""
+    
+    echo "--- Riwayat Login Terakhir (5 entri untuk user $CURRENT_USER) ---"
+    # Perintah 'last' menampilkan riwayat login user
+    if command -v last &> /dev/null; then
+        last -n 5 $CURRENT_USER
+    else
+        echo "  Perintah 'last' tidak ditemukan."
+    fi
+    echo ""
+    
+    echo "--- Penggunaan Disk oleh User di Direktori Home ---"
+    # Perintah 'du -sh' menampilkan total ukuran disk yang digunakan pada direktori tertentu
+    if [ -d "$HOME" ]; then
+        du -sh "$HOME"
+    else
+        echo "  Direktori home ($HOME) tidak ditemukan."
+    fi
+    
+    echo "========================================="
+    echo ""
+}
+
+# --- CONTOH PENGGUNAAN DALAM MENU UTAMA (VERSI SEDERHANA) ---
+# Hilangkan komentar di bawah ini untuk menjalankan contoh menu sederhana.
+
+clear # Bersihkan layar awal
+while true; do
+    # Tampilkan judul menu (sesuaikan dengan "Menu Suangar" jika diinginkan, atau nama lain)
+    # Anda bisa menggunakan perintah `figlet` jika terinstall untuk membuat teks besar seperti di foto
+    # Contoh: figlet "Menu Saya"
+    echo ""
+    echo "###################################"
+    echo "#          MENU SEDERHANA         #" 
+    echo "###################################"
+    echo "# 1. Informasi Jaringan           #"
+    echo "# 2. Informasi User               #"
+    echo "# 3. Keluar                       #"
+    echo "###################################"
+    read -p "Pilih opsi [1-3]: " pilihan
+
+    case $pilihan in
+        1) clear; informasi_jaringan; read -n 1 -s -r -p "Tekan sembarang tombol untuk kembali..."; clear;;
+        2) clear; informasi_user; read -n 1 -s -r -p "Tekan sembarang tombol untuk kembali..."; clear;;
+        3) echo "Terima kasih telah menggunakan program ini. Keluar..."; exit 0;;
+        *) clear; echo "Pilihan tidak valid! Silakan coba lagi."; read -n 1 -s -r -p "Tekan sembarang tombol untuk kembali..."; clear;;
+    esac
+done
