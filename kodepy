@@ -1,257 +1,147 @@
 # Impor pustaka yang diperlukan
 from collections import defaultdict
 import time
-import socket
-import struct # Untuk unpacking data biner dari header paket
-import os # Untuk mendapatkan nama host
+import re # Modul regular expression untuk parsing log yang lebih fleksibel
+import os # Untuk memeriksa keberadaan file
 
 # --- Konfigurasi ---
 # Jumlah maksimal percobaan login gagal dari satu IP sebelum dianggap serangan.
 MAX_FAILED_ATTEMPTS = 5
 # Jangka waktu (dalam detik) untuk memantau percobaan gagal tersebut.
-TIME_WINDOW = 60  # 1 menit
+TIME_WINDOW = 300  # 5 menit
+# Path ke file log SSH yang akan dipantau
+# Contoh umum di Linux: '/var/log/auth.log' atau '/var/log/secure'
+# Sesuaikan path ini dengan sistem Anda!
+SSH_LOG_FILE = '/var/log/auth.log'
+# Pola regex untuk mendeteksi percobaan login SSH yang gagal
+# Pola ini mungkin perlu disesuaikan tergantung format log spesifik Anda.
+# Contoh ini mencari pesan seperti "Failed password for invalid user X from Y.Y.Y.Y"
+# atau "Failed password for X from Y.Y.Y.Y"
+# Grup 1 akan menangkap username (opsional), Grup 2 akan menangkap alamat IP
+FAILED_LOGIN_PATTERN = re.compile(
+    r"Failed password for (invalid user )?(?P<username>\S+) from (?P<ip_address>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
+)
+# Pola regex untuk mendeteksi login SSH yang berhasil (untuk mereset counter)
+SUCCESSFUL_LOGIN_PATTERN = re.compile(
+    r"Accepted publickey for (?P<username>\S+) from (?P<ip_address>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) port \d+ ssh2"
+    r"|Accepted password for (?P<username>\S+) from (?P<ip_address>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) port \d+ ssh2"
+)
+
 
 # --- Struktur Data ---
 # Kamus untuk menyimpan timestamp dari percobaan login gagal per alamat IP.
 # Format: { 'ip_address': [timestamp1, timestamp2, ...], ... }
 failed_logins_tracker = defaultdict(list)
 
-# --- Fungsi Inti untuk Raw Socket ---
+# --- Fungsi Inti ---
 
-def get_host_ip():
-    """Mencoba mendapatkan alamat IP lokal dari host."""
-    try:
-        hostname = socket.gethostname()
-        host_ip = socket.gethostbyname(hostname)
-        return host_ip
-    except socket.gaierror:
-        # Fallback jika gethostbyname gagal (misalnya, tidak ada koneksi jaringan yg benar)
-        # Coba konek ke DNS publik untuk dapatkan IP interface yg digunakan
-        try:
-            s_temp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s_temp.connect(("8.8.8.8", 80))
-            host_ip = s_temp.getsockname()[0]
-            s_temp.close()
-            return host_ip
-        except Exception:
-            return "127.0.0.1" # Default jika semua gagal
-
-def parse_ip_header(raw_buffer):
+def parse_ssh_log_line(log_line):
     """
-    Mengurai header IP dari data paket mentah.
-    Mengembalikan source_ip, destination_ip, dan protokol lapisan berikutnya.
-    """
-    # Header IP biasanya 20 byte pertama
-    # Versi dan IHL (Internet Header Length) ada di byte pertama
-    # IHL * 4 = panjang header IP dalam byte
-    ip_header_data = raw_buffer[0:20]
-    iph = struct.unpack('!BBHHHBBH4s4s', ip_header_data) # Unpack header IP
-
-    version_ihl = iph[0]
-    # version = version_ihl >> 4 # Geser 4 bit ke kanan untuk mendapatkan versi
-    ihl = version_ihl & 0xF # Masking 4 bit terakhir untuk mendapatkan IHL
-    ip_header_length = ihl * 4
-
-    protocol = iph[6] # Nomor protokol (TCP=6, UDP=17, ICMP=1)
-    s_addr = socket.inet_ntoa(iph[8]) # Alamat IP sumber
-    d_addr = socket.inet_ntoa(iph[9]) # Alamat IP tujuan
-
-    return s_addr, d_addr, protocol, raw_buffer[ip_header_length:]
-
-def parse_tcp_header(ip_payload):
-    """
-    Mengurai header TCP dari payload IP.
-    Mengembalikan source_port, dest_port, dan payload TCP.
-    """
-    try:
-        # Header TCP biasanya 20 byte pertama dari payload IP (jika tidak ada options)
-        tcp_header_data = ip_payload[0:20]
-        tcph = struct.unpack('!HHLLBBHHH', tcp_header_data) # Unpack header TCP
-
-        source_port = tcph[0]
-        dest_port = tcph[1]
-        # sequence = tcph[2]
-        # acknowledgement = tcph[3]
-        doff_reserved = tcph[4] # Data Offset (panjang header TCP) dan bit reserved
-        tcph_length = (doff_reserved >> 4) * 4 # Panjang header TCP dalam byte
-
-        return source_port, dest_port, ip_payload[tcph_length:]
-    except struct.error:
-        # Jika payload tidak cukup panjang untuk header TCP standar
-        return None, None, None
-
-def analyze_packet_for_failed_login(source_ip, dest_ip, protocol, ip_payload):
-    """
-    Menganalisis data paket untuk mencoba mengidentifikasi upaya login yang gagal.
-    INI ADALAH BAGIAN YANG PALING SULIT DAN SERINGKALI TIDAK MUNGKIN UNTUK LALU LINTAS TERENKRIPSI.
-    Fungsi ini lebih bersifat konseptual.
+    Menganalisis satu baris log SSH untuk mengekstrak IP dan status percobaan login.
 
     Args:
-        source_ip (str): IP Sumber.
-        dest_ip (str): IP Tujuan.
-        protocol (int): Nomor protokol (misalnya, 6 untuk TCP).
-        ip_payload (bytes): Payload dari paket IP (misalnya, header TCP + data TCP).
+        log_line (str): Satu baris dari file log SSH.
 
     Returns:
-        bool: True jika dianggap sebagai percobaan login gagal, False jika tidak.
+        tuple: (str: ip_address, bool: is_login_failed)
+               Mengembalikan (None, False) jika baris log tidak relevan.
     """
-    is_failed_attempt = False
+    match_failed = FAILED_LOGIN_PATTERN.search(log_line)
+    if match_failed:
+        ip_address = match_failed.group("ip_address")
+        # username = match_failed.group("username") # Bisa digunakan jika perlu
+        print(f"DEBUG (parse_log): Percobaan GAGAL terdeteksi dari IP: {ip_address} - Log: {log_line.strip()}")
+        return ip_address, True
 
-    if protocol == 6: # TCP
-        source_port, dest_port, tcp_payload = parse_tcp_header(ip_payload)
-        if source_port is None: # Gagal parse TCP header
-            return False
+    match_successful = SUCCESSFUL_LOGIN_PATTERN.search(log_line)
+    if match_successful:
+        ip_address = match_successful.group("ip_address")
+        # username = match_successful.group("username") # Bisa digunakan jika perlu
+        # Jika login berhasil, reset catatan kegagalan untuk IP tersebut
+        if ip_address in failed_logins_tracker:
+            print(f"DEBUG (parse_log): Login BERHASIL dari IP: {ip_address}. Mereset catatan kegagalan.")
+            failed_logins_tracker[ip_address] = []
+        return ip_address, False
 
-        # --- Logika Deteksi Hipotetis (SANGAT TERBATAS) ---
-        # Contoh: Jika paket menuju port SSH (22) atau FTP (21) di server kita.
-        # Kita TIDAK BISA tahu apakah login gagal dari paket terenkripsi.
-        # Logika di bawah ini hanya untuk ilustrasi konsep.
-        
-        # Asumsikan server kita adalah dest_ip
-        # Ini perlu disesuaikan jika skrip berjalan di mesin yang berbeda dari server
-        # target_server_ip = get_host_ip() # Atau IP server yang dipantau secara spesifik
-
-        # if dest_ip == target_server_ip: # Paket ditujukan ke server kita
-        if dest_port == 22: # SSH
-            # Untuk SSH, semua data login terenkripsi. Tidak mungkin tahu dari sini.
-            # Mungkin bisa dideteksi jika ada banyak koneksi cepat dari satu IP ke port 22
-            # yang kemudian ditutup (RST) oleh server, tapi ini spekulatif.
-            print(f"DEBUG (analyze_packet): Paket TCP ke port SSH (22) dari {source_ip}:{source_port} ke {dest_ip}:{dest_port}.")
-            # is_failed_attempt = True # HANYA UNTUK DEMO, JANGAN GUNAKAN DI PRODUKSI
-            pass
-        elif dest_port == 21: # FTP
-            # Untuk FTP (tanpa enkripsi), mungkin bisa mencari respons server "530 Login incorrect".
-            # Namun, ini memerlukan parsing data aplikasi FTP yang lebih dalam.
-            print(f"DEBUG (analyze_packet): Paket TCP ke port FTP (21) dari {source_ip}:{source_port} ke {dest_ip}:{dest_port}.")
-            # if tcp_payload and b"530 Login incorrect" in tcp_payload:
-            #     is_failed_attempt = True
-            pass
-        elif dest_port == 80 or dest_port == 443: # HTTP / HTTPS
-            # Untuk HTTP (tanpa enkripsi), bisa mencari respons 401 Unauthorized.
-            # Untuk HTTPS (terenkripsi), tidak mungkin.
-            print(f"DEBUG (analyze_packet): Paket TCP ke port HTTP/S ({dest_port}) dari {source_ip}:{source_port} ke {dest_ip}:{dest_port}.")
-            pass
-        
-        # Jika ada cara (sangat hipotetis untuk protokol terenkripsi) untuk mendeteksi kegagalan:
-        # if some_condition_indicating_failure:
-        #     is_failed_attempt = True
-
-    # Jika is_failed_attempt menjadi True berdasarkan analisis di atas (yang sangat sulit):
-    if is_failed_attempt:
-        print(f"DEBUG (analyze_packet): Potensi percobaan GAGAL terdeteksi dari IP: {source_ip} ke port {dest_port if protocol == 6 else 'N/A'}")
-        return True
-        
-    return False
-
+    return None, False # Baris log tidak cocok dengan pola gagal atau sukses
 
 def check_for_brute_force(ip_address):
     """
     Memeriksa apakah alamat IP tertentu menunjukkan tanda-tanda serangan brute force.
-    (Fungsi ini sama seperti versi sebelumnya)
     """
     current_time = time.time()
     timestamps = failed_logins_tracker[ip_address]
 
+    # Saring timestamp, hanya pertahankan yang masih dalam TIME_WINDOW
     relevant_timestamps = [ts for ts in timestamps if (current_time - ts) <= TIME_WINDOW]
-    failed_logins_tracker[ip_address] = relevant_timestamps
+    failed_logins_tracker[ip_address] = relevant_timestamps # Update tracker
 
     if len(relevant_timestamps) >= MAX_FAILED_ATTEMPTS:
         print(f"🚨 ALARM: Potensi serangan BRUTE FORCE terdeteksi dari IP: {ip_address}")
-        print(f"   Detail: {len(relevant_timestamps)} percobaan gagal (terdeteksi dari paket) dalam {TIME_WINDOW} detik terakhir.")
-        # Di sini bisa ditambahkan aksi (blokir IP, notifikasi, dll.)
+        print(f"   Detail: {len(relevant_timestamps)} percobaan login SSH gagal dalam {TIME_WINDOW} detik terakhir.")
+        # Di sini Anda bisa menambahkan logika untuk tindakan lebih lanjut:
+        # - Mencatat IP ke daftar blokir
+        # - Mengirim notifikasi (email, Slack, dll.)
+        # - Menjalankan skrip untuk memblokir IP di firewall (misalnya, menggunakan iptables atau ufw)
+        # Contoh: block_ip_on_firewall(ip_address)
         return True
-        
     return False
 
-def start_packet_sniffing():
+def follow_log_file(log_file_path):
     """
-    Memulai proses penangkapan dan analisis paket jaringan.
+    Membaca baris baru dari file log secara terus-menerus (mirip 'tail -f').
     """
-    print("\n🔎 Memulai penangkapan paket jaringan (memerlukan hak akses root/administrator)...")
-    print(f"   Parameter Deteksi: Maksimum {MAX_FAILED_ATTEMPTS} kegagalan / {TIME_WINDOW} detik.")
-    print("   PERINGATAN: Deteksi login gagal dari raw socket sangat terbatas, terutama untuk trafik terenkripsi.")
-
-    # Buat raw socket
-    # socket.AF_INET untuk paket IPv4
-    # socket.SOCK_RAW untuk raw socket
-    # socket.IPPROTO_IP atau socket.IPPROTO_TCP atau socket.IPPROTO_ICMP
-    # Menggunakan IPPROTO_TCP akan menangkap paket TCP.
-    # Menggunakan IPPROTO_IP akan menangkap paket IP (termasuk header IP).
-    # Untuk Windows, IPPROTO_IP mungkin lebih baik, tapi perlu di-bind dan set ke promiscuous mode.
-    # Untuk Linux, IPPROTO_TCP atau IPPROTO_RAW bisa digunakan.
-    
-    sniffer = None
     try:
-        if os.name == "nt": # Windows
-            # Di Windows, untuk menangkap semua paket IP, kita bind ke alamat IP lokal
-            host = get_host_ip()
-            print(f"   Windows: Binding raw socket ke {host}")
-            sniffer = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_IP)
-            sniffer.bind((host, 0))
-            # Atur opsi socket untuk menyertakan header IP
-            sniffer.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-            # Aktifkan promiscuous mode (memerlukan ioctl)
-            sniffer.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
-        else: # Linux/macOS
-            print("   Linux/macOS: Menggunakan socket.IPPROTO_TCP (atau IPPROTO_RAW untuk semua protokol IP)")
-            # IPPROTO_TCP hanya akan menangkap paket TCP
-            # IPPROTO_RAW atau IPPROTO_IP akan menangkap semua protokol di atas IP
-            sniffer = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP) # Bisa juga IPPROTO_RAW
+        if not os.path.exists(log_file_path):
+            print(f"❌ ERROR: File log '{log_file_path}' tidak ditemukan.")
+            return
 
-        print("   Raw socket berhasil dibuat. Menunggu paket...")
-
-        while True:
-            raw_buffer, addr = sniffer.recvfrom(65535) # Terima data paket
-            
-            # Parse header IP
-            s_addr, d_addr, protocol, ip_payload = parse_ip_header(raw_buffer)
-            # print(f"   Paket diterima: {s_addr} -> {d_addr}, Protokol: {protocol}")
-
-            # Analisis lebih lanjut untuk upaya login gagal
-            # Ini adalah bagian yang sangat sulit dan seringkali tidak mungkin untuk lalu lintas terenkripsi
-            if analyze_packet_for_failed_login(s_addr, d_addr, protocol, ip_payload):
-                failed_logins_tracker[s_addr].append(time.time())
-                if check_for_brute_force(s_addr):
-                    # Aksi jika brute force terdeteksi
-                    pass
-            
-    except socket.error as e:
-        if os.name == "nt" and e.winerror == 10013: # WSAEACCES
-             print(f"❌ ERROR: Gagal membuat raw socket. Skrip ini harus dijalankan sebagai Administrator di Windows. ({e})")
-        elif e.errno == 1: # Operation not permitted (Linux/macOS)
-            print(f"❌ ERROR: Gagal membuat raw socket. Skrip ini harus dijalankan sebagai root/superuser. ({e})")
-        else:
-            print(f"❌ ERROR Socket: {e}")
-    except PermissionError: # Kadang muncul sebagai PermissionError juga
-        print("❌ ERROR: Gagal membuat raw socket karena masalah perizinan. Jalankan sebagai root/administrator.")
+        print(f"🔎 Memantau file log: {log_file_path}")
+        print(f"   Parameter Deteksi: Maksimum {MAX_FAILED_ATTEMPTS} kegagalan / {TIME_WINDOW} detik.")
+        
+        with open(log_file_path, 'r') as file:
+            # Pindah ke akhir file untuk hanya membaca baris baru
+            file.seek(0, os.SEEK_END)
+            while True:
+                line = file.readline()
+                if not line:
+                    time.sleep(0.1)  # Tunggu sebentar jika tidak ada baris baru
+                    continue
+                
+                # Proses baris log yang baru dibaca
+                # print(f"DEBUG (follow_log): Baris baru: {line.strip()}") # Untuk debugging detail
+                ip, is_failed = parse_ssh_log_line(line)
+                if ip and is_failed:
+                    failed_logins_tracker[ip].append(time.time())
+                    if check_for_brute_force(ip):
+                        # Aksi jika brute force terdeteksi
+                        # Anda mungkin ingin menandai IP ini agar tidak memicu alarm berulang
+                        # dalam waktu singkat, atau melakukan aksi blokir.
+                        pass
+    except FileNotFoundError:
+        print(f"❌ ERROR: File log '{log_file_path}' tidak ditemukan saat mencoba membuka.")
+    except PermissionError:
+        print(f"❌ ERROR: Tidak ada izin untuk membaca file log '{log_file_path}'. Coba jalankan dengan sudo.")
     except KeyboardInterrupt:
-        print("\n🚫 Penangkapan paket dihentikan oleh pengguna.")
+        print("\n🚫 Pemantauan log dihentikan oleh pengguna.")
     except Exception as e:
-        print(f"❌ ERROR tak terduga saat menangkap paket: {e}")
+        print(f"❌ ERROR tak terduga saat memantau log: {e}")
     finally:
-        if sniffer and os.name == "nt":
-            # Matikan promiscuous mode di Windows
-            try:
-                sniffer.ioctl(socket.SIO_RCVALL, socket.RCVALL_OFF)
-                print("   Windows: Promiscuous mode dinonaktifkan.")
-            except Exception as e_ioctl_off:
-                print(f"   Peringatan: Gagal menonaktifkan promiscuous mode: {e_ioctl_off}")
-        if sniffer:
-            sniffer.close()
-            print("   Raw socket ditutup.")
-        print("✅ Proses penangkapan paket selesai.")
+        print("✅ Proses pemantauan log selesai.")
 
 # --- Contoh Penggunaan ---
-if _name_ == "_main_":
-    # Jalankan fungsi penangkapan paket
-    start_packet_sniffing()
+if __name__ == "__main__":
+    # Jalankan fungsi pemantauan log
+    follow_log_file(SSH_LOG_FILE)
 
-    print("\n📊 Status Akhir Pelacak Percobaan Gagal (yang masih dalam time window):")
+    # Bagian ini mungkin tidak akan pernah tercapai jika follow_log_file berjalan dalam loop tak terbatas,
+    # kecuali jika dihentikan dengan KeyboardInterrupt dan ada logika tambahan.
+    print("\n📊 Status Akhir Pelacak Percobaan Gagal (jika skrip dihentikan):")
     current_time_final = time.time()
     if not failed_logins_tracker:
-        print("   Tidak ada catatan percobaan gagal aktif yang terdeteksi dari paket.")
+        print("   Tidak ada catatan percobaan gagal aktif.")
     else:
         for ip, timestamps in failed_logins_tracker.items():
             relevant_timestamps_final = [ts for ts in timestamps if (current_time_final - ts) <= TIME_WINDOW]
             if relevant_timestamps_final:
-                print(f"   IP: {ip}, Jumlah percobaan gagal (dari paket) terkini: {len(relevant_timestamps_final)}")
+                print(f"   IP: {ip}, Jumlah percobaan gagal terkini: {len(relevant_timestamps_final)}")
