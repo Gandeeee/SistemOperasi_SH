@@ -1,28 +1,50 @@
-# gui_detector.py
-# Sistem deteksi SSH Brute Force dengan GUI dasar menggunakan Tkinter.
+# detector.py 
+# Sistem deteksi SSH Brute Force dengan kombinasi GUI dasar menggunakan lib Tkinter.
 
 import tkinter as tk
-from tkinter import scrolledtext, messagebox # simpledialog tidak digunakan jika tidak ada konfigurasi
-import tkinter.ttk as ttk # Menggunakan ttk untuk widget yang lebih modern
-import threading
-import time
-import re
-from collections import defaultdict
-import os
-import queue # Untuk komunikasi antar thread
+# Untuk bikin tampilan jendela, tombol, tulisan (GUI). Kita panggil 'tk'.
 
-# --- Konfigurasi Utama (Sama seperti di server_ssh_detector.py) ---
-# Di Ubuntu VM, ini seharusnya sudah benar
-LOG_FILE_PATH_DEFAULT = "/var/log/auth.log" # Sesuaikan jika perlu untuk demo
+from tkinter import scrolledtext, messagebox
+# scrolledtext: Kotak tulisan yang bisa digulir.
+# messagebox: Kotak pesan pop-up (info, error, peringatan).
+
+import tkinter.ttk as ttk
+# Sama seperti 'tk' yang atas, tapi untuk elemen GUI yang tampilannya lebih baru. dipanggil panggil 'ttk'.
+
+import threading
+# Biar program bisa kerjakan banyak hal sekaligus (misal, pantau log sambil GUI tetap jalan).
+
+import time
+# Untuk urusan waktu (misal, dikasi jeda).
+
+import re
+# Untuk cari pola tulisan di dalam teks (misal, cari IP di log).
+
+from collections import defaultdict
+# Kamus (dictionary) pintar yang otomatis kasih nilai awal kalau belum ada.
+
+import os
+# Untuk kerja dengan file dan folder di komputer (misal, cek file ada atau tidak).
+
+import queue
+# Untuk bikin "antrian" pesan aman antar bagian program yang jalan bareng.
+
+# --- Ini  pengaturan awal untuk sistem detektor  ---
+LOG_FILE_PATH_DEFAULT = "/var/log/auth.log"
+# Ini adalah nama file tempat skrip akan mencari catatan (log) aktivitas SSH.
+
 FAILED_LOGIN_THRESHOLD_DEFAULT = 5
+# Kalau ada 5 kali percobaan login yang gagal dari satu IP, kita anggap itu serangan.
+
 TIME_WINDOW_SECONDS_DEFAULT = 300
+# Angka 5 percobaan gagal tadi dihitung dalam rentang waktu 300 detik (atau 5 menit).
 
 # --- Variabel Global untuk Kontrol Thread dan GUI ---
 monitoring_thread = None
 stop_monitoring_flag = threading.Event() # Event untuk memberi sinyal stop ke thread
 log_queue = queue.Queue() # Antrian untuk mengirim pesan dari thread backend ke GUI
 
-# --- Logika Deteksi Inti (Tidak diubah dari kode asli Anda) ---
+# --- Logika Deteksi Inti (Tidak diubah dari kode asli ) ---
 failed_attempts_log = defaultdict(list)
 current_log_file_path = LOG_FILE_PATH_DEFAULT
 current_failed_login_threshold = FAILED_LOGIN_THRESHOLD_DEFAULT
