@@ -1,25 +1,27 @@
-# attacker_simulation.py
+# attacker.py
 # Skrip untuk mensimulasikan serangan SSH Brute Force secara otomatis
-# untuk keperluan pengujian sistem deteksi.
 
 import subprocess
+# Untuk menjalankan perintah atau program lain dari dalam kode Python kita
+# (misalnya, menjalankan perintah 'ssh' untuk simulasi serangan).
+
 import time
+# Untuk semua hal yang berhubungan dengan waktu
+# (misalnya, memberi jeda `time.sleep()` antar percobaan serangan).
 
 # --- Konfigurasi Serangan (SESUAIKAN JIKA PERLU) ---
 # Atur ke "127.0.0.1" jika menjalankan ini di VM yang sama dengan detektor.
 # Jika detektor di VM lain, ganti dengan IP VM detektor tersebut.
 TARGET_IP = "127.0.0.1"
 
-# Ganti dengan username yang ADA di sistem target (VM Ubuntu Anda)
 # untuk simulasi 'Failed password', atau username yang TIDAK ADA
 # untuk simulasi 'Invalid user'.
-TARGET_USER = "percobaanuser"  # Contoh: "userlinuxsaya" atau "user_tidak_ada"
+TARGET_USER = "gandhisuastika"  # Contoh: "userlinuxsaya" atau "user_tidak_ada"
 
-NUM_ATTEMPTS = 7         # Jumlah upaya login yang akan dilakukan
+NUM_ATTEMPTS = 20         # Jumlah upaya login yang akan dilakukan
 DELAY_BETWEEN_ATTEMPTS_SECONDS = 0.5 # Jeda waktu antar upaya login (dalam detik)
 
-# -----------------------------------------------------------------------------
-
+# ----------------------------------------------------------------------------
 print(f"--- Simulasi Serangan SSH Brute Force Otomatis Dimulai ---")
 print(f"🎯 Target Server: {TARGET_IP}")
 print(f"👤 Target User  : {TARGET_USER}")
@@ -66,9 +68,6 @@ for i in range(1, NUM_ATTEMPTS + 1):
         # Kode return non-nol dari ssh biasanya indikasi error/gagal.
         if process_result.returncode != 0:
             print(f"    ✔️ Percobaan ke-{i} gagal seperti yang diharapkan (return code: {process_result.returncode}).")
-            # Anda bisa print stderr jika ingin lihat detail error dari ssh:
-            # if process_result.stderr:
-            #     print(f"      Error SSH: {process_result.stderr.strip()}")
             successful_failures += 1
         else:
             # Ini seharusnya tidak terjadi jika TARGET_USER atau otentikasi memang salah
