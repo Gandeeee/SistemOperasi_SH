@@ -1,53 +1,79 @@
 #!/bin/bash
 
 # ==============================================================================
+# DEFINISI WARNA (ANSI ESCAPE CODES)
+# ==============================================================================
+# Anda dapat mengubah kode warna di sini untuk menyesuaikan tema.
+# Format: \e[<GAYA>;<KODE_WARNA>m
+# Contoh: \e[1;34m (Tebal, Biru)
+
+# Gaya Teks
+BOLD='\e[1m'
+DIM='\e[2m'
+UNDERLINE='\e[4m'
+
+# Warna Teks
+BLACK='\e[30m'
+RED='\e[31m'
+GREEN='\e[32m'
+YELLOW='\e[33m'
+BLUE='\e[34m'
+MAGENTA='\e[35m'
+CYAN='\e[36m'
+WHITE='\e[37m'
+ORANGE='\e[38;5;208m'
+
+# Warna Teks Cerah
+BRIGHT_RED='\e[91m'
+BRIGHT_GREEN='\e[92m'
+BRIGHT_YELLOW='\e[93m'
+BRIGHT_BLUE='\e[94m'
+BRIGHT_MAGENTA='\e[95m'
+BRIGHT_CYAN='\e[96m'
+
+# Reset
+NC='\e[0m' # No Color - kembali ke default
+
+# ==============================================================================
 # FUNGSI-FUNGSI PEMBANTU
 # ==============================================================================
 
-# Fungsi untuk menampilkan judul.
+# Fungsi untuk menampilkan judul (RATA KIRI).
 # Menggunakan figlet jika terinstal, jika tidak, menggunakan teks biasa.
 # Argumen: $1 - Teks judul yang akan ditampilkan.
 tampilkan_judul() {
     # Ini untuk memeriksa apakah perintah figlet tersedia di sistem.
     if command -v figlet &> /dev/null; then
-        # Ini untuk menampilkan judul menggunakan figlet dengan font slant dan rata tengah.
-        figlet -c -f slant "$1"
+        # Menampilkan judul menggunakan figlet RATA KIRI dengan warna Cyan cerah.
+        printf "${BRIGHT_CYAN}"
+        figlet -f slant "$1"
+        printf "${NC}"
     else
-        # Ini adalah alternatif jika figlet tidak terinstal.
+        # Alternatif RATA KIRI jika figlet tidak terinstal.
         local judul_teks="$1"
         local panjang_judul=${#judul_teks}
-        local lebar_terminal=$(tput cols 2>/dev/null || echo 80) # Ini untuk mendapatkan lebar terminal.
-        local padding_total=$((lebar_terminal - panjang_judul - 4))
-        local padding_kiri=$((padding_total / 2))
-        local padding_kanan=$((padding_total - padding_kiri))
+        local garis_batas=$(printf "#%.0s" $(seq 1 $((panjang_judul + 4))) | tr '0' '#')
 
-        # Ini untuk mencetak judul dengan format manual agar rata tengah.
-        printf "\n"
-        printf "#%.0s" $(seq 1 $lebar_terminal) | tr '0' '#'
-        printf "\n"
-        printf "# %*s%s%*s #\n" $padding_kiri "" "$judul_teks" $padding_kanan ""
-        printf "#%.0s" $(seq 1 $lebar_terminal) | tr '0' '#'
-        printf "\n"
+        printf "\n${BRIGHT_CYAN}%s${NC}\n" "$garis_batas"
+        printf "${BRIGHT_CYAN}# %s #${NC}\n" "$judul_teks"
+        printf "${BRIGHT_CYAN}%s${NC}\n\n" "$garis_batas"
     fi
 }
 
 # ==============================================================================
-# FUNGSI-FUNGSI MENU UTAMA
+# FUNGSI-FUNGSI MENU UTAMA (SEMUA OUTPUT RATA KIRI)
 # ==============================================================================
 
-# Fungsi baru untuk menampilkan sapaan dan waktu.
+# Fungsi untuk menampilkan sapaan dan waktu (VERSI TABEL RAPI)
 sapa_pengguna() {
     clear
     tampilkan_judul "Greeting User"
-    echo ""
-
-    # Mendapatkan nama user yang sedang login
+    
+    # --- Mengumpulkan Informasi ---
     local NAMA_USER=$(id -un)
-    # Mendapatkan jam saat ini dalam format 24 jam (00-23)
     local JAM=$(date +%H)
     local SAPAAN
 
-    # Menentukan sapaan berdasarkan waktu
     if [[ "$JAM" -ge 4 && "$JAM" -lt 11 ]]; then
         SAPAAN="Selamat Pagi"
     elif [[ "$JAM" -ge 11 && "$JAM" -lt 15 ]]; then
@@ -58,205 +84,347 @@ sapa_pengguna() {
         SAPAAN="Selamat Malam"
     fi
 
-    # Mengatur locale ke Indonesia agar output nama hari dan bulan menjadi Bahasa Indonesia.
-    # Catatan: Locale id_ID.UTF-8 harus terinstall di sistem Anda.
-    export LC_TIME=id_ID.UTF-8
-    
-    # Mendapatkan format tanggal dan waktu yang lengkap dan mudah dibaca
-    local WAKTU_LENGKAP=$(date +"%A, %d %B %Y | %T %Z")
+    local SALAM_PEMBUKA="Halo ${BOLD}${ORANGE}$NAMA_USER${NC}, $SAPAAN!"
+    local TANGGAL_LENGKAP=$(date +"%A, %d %B %Y")
+    local WAKTU_SEKARANG=$(date +"%T %Z")
+    local HARI_KE=$(date +%j)
+    local MINGGU_KE=$(date +%V)
+    local LOKASI="Surabaya, Jawa Timur"
 
-    # Menampilkan output
-    echo "    $SAPAAN, $NAMA_USER!"
-    echo "    Tanggal dan Waktu Saat Ini:"
+    # --- Menampilkan Output dalam Format Tabel ---
     echo ""
-    echo "      $WAKTU_LENGKAP"
+    echo -e "$SALAM_PEMBUKA" # -e diperlukan untuk interpretasi warna
     echo ""
-    echo "============================================================"
+
+    # Mendefinisikan garis tabel dengan warna
+    local table_line="${DIM}+---------------------------+---------------------------------------+${NC}"
+    
+    echo -e "$table_line"
+    # Header tabel dengan warna
+    printf "| ${BOLD}${YELLOW}%-25s${NC} | ${BOLD}${YELLOW}%-37s${NC} |\n" "INFORMASI" "DETAIL"
+    echo -e "$table_line"
+    # Isi tabel dengan warna
+    printf "| %-25s | ${CYAN}%-37s${NC} |\n" "Tanggal Hari Ini" "$TANGGAL_LENGKAP"
+    printf "| %-25s | ${CYAN}%-37s${NC} |\n" "Waktu Saat Ini" "$WAKTU_SEKARANG"
+    printf "| %-25s | ${CYAN}%-37s${NC} |\n" "Info Kalender" "Hari ke-$HARI_KE (Minggu ke-$MINGGU_KE)"
+    printf "| %-25s | ${CYAN}%-37s${NC} |\n" "Perkiraan Lokasi Anda" "$LOKASI"
+    echo -e "$table_line"
+    
     echo ""
 }
 
-# Fungsi untuk menampilkan informasi jaringan.
+# Fungsi untuk menampilkan informasi jaringan (PERBAIKAN TABEL IP)
 informasi_jaringan() {
-    clear # Ini untuk membersihkan layar terminal.
-    tampilkan_judul "Info Jaringan" # Ini untuk menampilkan judul halaman "Info Jaringan".
-    echo ""
-    echo "============================================================"
+    clear
+    tampilkan_judul "Info Jaringan"
+    echo -e "${DIM}=====================================================================${NC}"
     
     # 1. Cek Koneksi Internet
-    # Ini untuk memeriksa koneksi ke internet dengan melakukan ping ke server DNS Google.
-    echo -n "    Status Koneksi Internet     : "
+    printf "%-30s: " "Status Koneksi Internet"
     if ping -c 1 -W 1 8.8.8.8 &> /dev/null || ping -c 1 -W 1 1.1.1.1 &> /dev/null; then
-        echo "Terhubung"
+        echo -e "${BRIGHT_GREEN}✔ Terhubung${NC}"
     else
-        echo "Putus / Tidak Terhubung"
+        echo -e "${BRIGHT_RED}❌ Putus / Tidak Terhubung${NC}"
     fi
     echo ""
 
-    # 2. Tampilkan Konfigurasi Jaringan Lokal
-    echo "    --- Konfigurasi Jaringan Lokal ---"
-    echo "    Alamat IP Lokal (IPv4)      :"
-    # Ini untuk menampilkan semua alamat IP versi 4 yang aktif.
-    ip -4 addr show scope global | awk '/inet / {printf "      Interface %-10s : %s\n", $NF, $2}' | sed 's|/.*||'
+    # 2. Status Koneksi LAN / Wi-Fi
+    echo -e "${YELLOW}--- Status Koneksi LAN / Wi-Fi ---${NC}"
+    if command -v nmcli &> /dev/null; then
+        local table_line="${DIM}+-----------------+------------+---------------+--------------------------+${NC}"
+        echo -e "$table_line"
+        printf "| ${BOLD}%-15s${NC} | ${BOLD}%-10s${NC} | ${BOLD}%-13s${NC} | ${BOLD}%-24s${NC} |\n" "DEVICE" "TYPE" "STATE" "CONNECTION"
+        echo -e "$table_line"
+        nmcli -t -f DEVICE,TYPE,STATE,CONNECTION dev status | grep -v 'loopback' | while IFS=: read -r device type state connection; do
+            if [[ -z "$connection" ]]; then connection="--"; fi
+            # Memberi warna pada state
+            local state_color="$NC"
+            if [[ "$state" == "connected" ]]; then state_color="${GREEN}"; elif [[ "$state" == "disconnected" ]]; then state_color="${RED}"; fi
+            printf "| ${CYAN}%-15s${NC} | %-10s | ${state_color}%-13s${NC} | ${BRIGHT_GREEN}%-24s${NC} |\n" "$device" "$type" "$state" "$connection"
+        done
+        echo -e "$table_line"
+    else
+        echo -e "${RED}Perintah 'nmcli' tidak ditemukan. Fitur ini memerlukan NetworkManager.${NC}"
+    fi
+    echo ""
+
+    # --- Bagian 3 & 4 digabung dan dirapikan ---
+    local GATEWAY=$(ip route | grep '^default' | awk '{print $3}')
+    readarray -t DNS_SERVERS < <(grep "^nameserver" /etc/resolv.conf 2>/dev/null | awk '{print $2}')
+    local PUBLIC_IP
+    if command -v curl &> /dev/null; then PUBLIC_IP=$(curl -s --max-time 5 api.ipify.org); fi
+    local CITY="N/A" REGION="N/A" COUNTRY="N/A" ORG="N/A"
+    if [[ -n "$PUBLIC_IP" ]]; then
+        LOCATION_INFO_JSON=$(curl -s --max-time 7 "ipinfo.io/$PUBLIC_IP?token=YOUR_IPINFO_TOKEN") # Ganti dengan token Anda
+        CITY=$(echo "$LOCATION_INFO_JSON" | grep -oP '"city":\s*"\K[^"]*')
+        REGION=$(echo "$LOCATION_INFO_JSON" | grep -oP '"region":\s*"\K[^"]*')
+        COUNTRY=$(echo "$LOCATION_INFO_JSON" | grep -oP '"country":\s*"\K[^"]*')
+        ORG=$(echo "$LOCATION_INFO_JSON" | grep -oP '"org":\s*"\K[^"]*')
+    fi
+
+    echo -e "${YELLOW}--- Konfigurasi Umum & IP Publik ---${NC}"
+    local config_line="${DIM}+-------------------------+------------------------------------------+${NC}"
+    echo -e "$config_line"
+    printf "| ${BOLD}%-23s${NC} | ${BOLD}%-40s${NC} |\n" "INFORMASI" "DETAIL"
+    echo -e "$config_line"
+    printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Gateway Utama" "${GATEWAY:-Tidak Ditemukan}"
+    local i=1
+    for dns in "${DNS_SERVERS[@]}"; do
+        printf "| %-23s | ${CYAN}%-40s${NC} |\n" "DNS Server $i" "$dns"
+        i=$((i+1))
+    done
+    printf "| %-23s | ${BRIGHT_GREEN}%-40s${NC} |\n" "IP Publik" "${PUBLIC_IP:-Tidak Terhubung}"
+    printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Kota / Negara" "${CITY:-N/A} / ${COUNTRY:-N/A}"
+    printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Wilayah" "${REGION:-N/A}"
+    printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Provider/Organisasi" "${ORG:-N/A}"
+    echo -e "$config_line"
+    echo ""
+
+    # --- Menampilkan Tabel Alamat IP Lokal ---
+    echo -e "${YELLOW}--- Alamat IP Lokal (IPv4) ---${NC}"
+    local ip_table_line="${DIM}+-----------------+------------------+${NC}"
+    echo -e "$ip_table_line"
+    printf "| ${BOLD}%-15s${NC} | ${BOLD}%-16s${NC} |\n" "INTERFACE" "ALAMAT IP"
+    echo -e "$ip_table_line"
+    ip -4 addr show scope global | awk '/inet / {print $NF, $2}' | while read -r interface ip_cidr; do
+        local ip_clean=$(echo "$ip_cidr" | sed 's|/.*||')
+        printf "| ${CYAN}%-15s${NC} | ${GREEN}%-16s${NC} |\n" "$interface" "$ip_clean"
+    done
+    echo -e "$ip_table_line"
     
-    # Ini untuk menampilkan IP utama melalui perintah hostname.
-    LOCAL_IPS_HOSTNAME=$(hostname -I 2>/dev/null | awk '{print $1}') 
-    if [ -n "$LOCAL_IPS_HOSTNAME" ]; then
-        echo "      (IP Utama via hostname -I : $LOCAL_IPS_HOSTNAME)"
-    fi
-    echo ""
-
-    # Ini untuk menampilkan alamat gateway default.
-    echo -n "    Gateway Utama               : "
-    GATEWAY=$(ip route | grep '^default' | awk '{print $3}')
-    if [ -n "$GATEWAY" ]; then
-        echo "$GATEWAY"
-    else
-        echo "Tidak ditemukan"
-    fi
-    echo ""
-
-    # Ini untuk menampilkan alamat server DNS dari file konfigurasi.
-    echo "    DNS Server (dari /etc/resolv.conf):"
-    if [ -f /etc/resolv.conf ] && grep -q "^nameserver" /etc/resolv.conf; then
-        grep "^nameserver" /etc/resolv.conf | awk '{print "      " $2}'
-    else
-        echo "      Tidak ada nameserver dikonfigurasi atau file tidak ditemukan."
-    fi
-    echo ""
-
-    # 3. Tampilkan IP Publik dan Lokasi
-    echo "    --- IP Publik & Lokasi ---"
-    PUBLIC_IP=""
-    echo "    Mencoba mengambil IP Publik..."
-    # Ini untuk mencoba mengambil alamat IP publik dari layanan online.
-    if command -v curl &> /dev/null; then
-        PUBLIC_IP=$(curl -s --max-time 5 api.ipify.org || curl -s --max-time 5 icanhazip.com || curl -s --max-time 5 ifconfig.me/ip)
-    elif command -v wget &> /dev/null; then
-        PUBLIC_IP=$(wget -qO- --timeout=5 api.ipify.org || wget -qO- --timeout=5 icanhazip.com || wget -qO- --timeout=5 ifconfig.me/ip)
-    fi
-
-    # Ini untuk memvalidasi IP publik dan mengambil data lokasi jika IP valid.
-    if [[ -n "$PUBLIC_IP" && "$PUBLIC_IP" == *.* && "$PUBLIC_IP" != *"<html>"* && "$PUBLIC_IP" != *"<HTML>"* ]]; then
-        echo "    IP Publik Anda adalah         : $PUBLIC_IP"
-        echo "    Mencoba mengambil info lokasi (via ipinfo.io & ip-api.com)..."
-
-        LOCATION_INFO_JSON="" # Ini untuk menyimpan data JSON dari ipinfo.io
-        TOKEN_IPINFO=""
-        URL_IPINFO="ipinfo.io/$PUBLIC_IP"
-        [ -n "$TOKEN_IPINFO" ] && URL_IPINFO="$URL_IPINFO?token=$TOKEN_IPINFO"
-
-        # Ini untuk mengambil data lokasi dari ipinfo.io.
-        if command -v wget &> /dev/null; then
-            LOCATION_INFO_JSON=$(wget -qO- --timeout=7 "$URL_IPINFO")
-        elif command -v curl &> /dev/null; then
-            LOCATION_INFO_JSON=$(curl -s --max-time 7 "$URL_IPINFO")
-        fi
-        
-        # Ini untuk mem-parsing (mengurai) data JSON dari ipinfo.io untuk mendapatkan detail lokasi.
-        CITY_IO=$(echo "$LOCATION_INFO_JSON" | grep -oP '"city":\s*"\K[^"]*')
-        REGION_IO=$(echo "$LOCATION_INFO_JSON" | grep -oP '"region":\s*"\K[^"]*')
-        COUNTRY_IO=$(echo "$LOCATION_INFO_JSON" | grep -oP '"country":\s*"\K[^"]*')
-        ORG_IO=$(echo "$LOCATION_INFO_JSON" | grep -oP '"org":\s*"\K[^"]*')
-        POSTAL_IO=$(echo "$LOCATION_INFO_JSON" | grep -oP '"postal":\s*"\K[^"]*')
-        TIMEZONE_IO=$(echo "$LOCATION_INFO_JSON" | grep -oP '"timezone":\s*"\K[^"]*')
-
-        # Ini untuk menampilkan detail lokasi jika berhasil didapatkan dari ipinfo.io.
-        if [ -n "$CITY_IO" ] || [ -n "$REGION_IO" ] || [ -n "$COUNTRY_IO" ]; then
-            echo "      Detail Lokasi (dari ipinfo.io):"
-            printf "        %-28s : %s\n" "Kota" "${CITY_IO:-Tidak dapat ditentukan}"
-            printf "        %-28s : %s\n" "Wilayah (Region)" "${REGION_IO:-Tidak dapat ditentukan}"
-            printf "        %-28s : %s\n" "Negara" "${COUNTRY_IO:-Tidak dapat ditentukan}"
-            printf "        %-28s : %s\n" "Kode Pos" "${POSTAL_IO:-Tidak dapat ditentukan}"
-            printf "        %-28s : %s\n" "Zona Waktu" "${TIMEZONE_IO:-Tidak dapat ditentukan}"
-            printf "        %-28s : %s\n" "Organisasi/ISP" "${ORG_IO:-Tidak dapat ditentukan}"
-        else
-            # Ini adalah alternatif jika ipinfo.io gagal, mencoba ke ip-api.com.
-            echo "      Gagal parse dari ipinfo.io atau data tidak lengkap. Mencoba ip-api.com..."
-            LOCATION_ALT_LINE=""
-            URL_IPAPI="http://ip-api.com/line/${PUBLIC_IP}?fields=status,message,country,regionName,city,zip,timezone,isp,org"
-            
-            if command -v wget &> /dev/null; then
-                LOCATION_ALT_LINE=$(wget -qO- --timeout=7 "$URL_IPAPI")
-            elif command -v curl &> /dev/null; then
-                 LOCATION_ALT_LINE=$(curl -s --max-time 7 "$URL_IPAPI")
-            fi
-
-            # Ini untuk mem-parsing dan menampilkan data dari ip-api.com jika berhasil.
-            if echo "$LOCATION_ALT_LINE" | grep -q -E "^success"; then
-                echo "      Detail Lokasi (dari ip-api.com):"
-                COUNTRY_ALT=$(echo "$LOCATION_ALT_LINE" | awk 'NR==2 {print}')
-                REGION_ALT=$(echo "$LOCATION_ALT_LINE" | awk 'NR==3 {print}')
-                CITY_ALT=$(echo "$LOCATION_ALT_LINE" | awk 'NR==4 {print}')
-                ZIP_ALT=$(echo "$LOCATION_ALT_LINE" | awk 'NR==5 {print}')
-                TIMEZONE_ALT=$(echo "$LOCATION_ALT_LINE" | awk 'NR==6 {print}')
-                ISP_ALT=$(echo "$LOCATION_ALT_LINE" | awk 'NR==7 {print}')
-                ORG_ALT=$(echo "$LOCATION_ALT_LINE" | awk 'NR==8 {print}')
-                
-                printf "        %-28s : %s\n" "Kota" "${CITY_ALT:-Tidak dapat ditentukan}"
-                printf "        %-28s : %s\n" "Wilayah (Region)" "${REGION_ALT:-Tidak dapat ditentukan}"
-                printf "        %-28s : %s\n" "Negara" "${COUNTRY_ALT:-Tidak dapat ditentukan}"
-                printf "        %-28s : %s\n" "Kode Pos" "${ZIP_ALT:-Tidak dapat ditentukan}"
-                printf "        %-28s : %s\n" "Zona Waktu" "${TIMEZONE_ALT:-Tidak dapat ditentukan}"
-                printf "        %-28s : %s\n" "ISP" "${ISP_ALT:-Tidak dapat ditentukan}"
-                printf "        %-28s : %s\n" "Organisasi" "${ORG_ALT:-Tidak dapat ditentukan}"
-            else
-                echo "      Gagal mengambil detail lokasi dari ipinfo.io maupun ip-api.com."
-            fi
-        fi
-    else
-        # Ini untuk menampilkan pesan jika IP publik tidak bisa didapatkan.
-        echo "    Tidak dapat mengambil IP Publik atau format IP tidak valid."
-        echo "    Pastikan wget/curl terinstall dan Anda terhubung ke internet."
-    fi
-    echo "============================================================"
+    echo -e "${DIM}=====================================================================${NC}"
     echo ""
 }
 
-# Fungsi untuk menampilkan informasi pengguna.
+# Fungsi untuk menampilkan isi direktori saat ini (VERSI TABEL SIMETRIS)
+daftar_direktori() {
+    clear
+    tampilkan_judul "Daftar Direktori"
+    echo -e "${YELLOW}--- Isi Direktori Saat Ini: ${BRIGHT_YELLOW}$(pwd)${YELLOW} ---${NC}"
+    echo ""
+
+    if ! [ -n "$(find . -maxdepth 1 -mindepth 1 -print -quit)" ]; then
+        echo -e "  ${DIM}(Direktori ini kosong)${NC}"
+        echo ""
+        echo -e "${DIM}=====================================================================${NC}"
+        echo ""
+        return
+    fi
+    
+    local table_line="${DIM}+------------+----------+----------+---------+------------------+-------------------------------+"
+    
+    echo -e "$table_line${NC}"
+    printf "| ${BOLD}%-10s${NC} | ${BOLD}%-8s${NC} | ${BOLD}%-8s${NC} | ${BOLD}%-7s${NC} | ${BOLD}%-16s${NC} | ${BOLD}%-29s${NC} |\n" "Hak Akses" "Pemilik" "Grup" "Ukuran" "Modifikasi" "Nama File/Direktori"
+    echo -e "$table_line${NC}"
+
+    for item in * .*; do
+        if [[ "$item" == "." || "$item" == ".." ]]; then continue; fi
+        if [ -e "$item" ]; then
+            local perms=$(stat -c "%A" "$item")
+            local size=$(stat -c "%s" "$item")
+            local owner=$(stat -c "%U" "$item")
+            local group=$(stat -c "%G" "$item")
+            local mod_time=$(stat -c "%Y" "$item")
+            local human_size=$(numfmt --to=iec-i --suffix=B --format="%.1f" "$size")
+            local human_date=$(date -d "@$mod_time" "+%Y-%m-%d %H:%M")
+            
+            # Warna untuk nama file/direktori
+            local item_color="$NC"
+            if [ -d "$item" ]; then
+                item_color="${BRIGHT_BLUE}" # Biru untuk direktori
+            elif [ -x "$item" ]; then
+                item_color="${BRIGHT_GREEN}" # Hijau untuk file executable
+            fi
+            
+            printf "| ${GREEN}%-10s${NC} | %-8.8s | %-8.8s | ${ORANGE}%-7s${NC} | ${MAGENTA}%-16s${NC} | ${item_color}%-29.29s${NC} |\n" "$perms" "$owner" "$group" "$human_size" "$human_date" "$item"
+        fi
+    done
+    
+    echo -e "$table_line${NC}"
+    echo ""
+    echo -e "${DIM}=====================================================================${NC}"
+    echo ""
+}
+
+# Fungsi untuk menampilkan informasi pengguna (VERSI FINAL PALING RAPI)
 informasi_user() {
-    clear # Ini untuk membersihkan layar.
-    tampilkan_judul "Info User" # Ini untuk menampilkan judul halaman "Info User".
-    echo ""
-    echo "============================================================"
-    CURRENT_USER=$(id -un) # Ini untuk mendapatkan nama user yang sedang login.
+    clear
+    tampilkan_judul "Info User"
+    echo -e "${DIM}=====================================================================${NC}"
     
-    # Ini untuk menampilkan informasi dasar terkait user.
-    printf "    %-32s : %s\n" "Nama User Saat Ini" "$CURRENT_USER"
-    printf "    %-32s : %s\n" "User ID (UID)" "$(id -u $CURRENT_USER)"
-    printf "    %-32s : %s\n" "Group ID (GID Utama)" "$(id -g $CURRENT_USER)"
-    printf "    %-32s : %s\n" "Nama Grup Utama" "$(id -gn $CURRENT_USER)"
-    printf "    %-32s : %s\n" "Anggota Grup Lain" "$(groups $CURRENT_USER)"
-    printf "    %-32s : %s\n" "Direktori Home" "$HOME"
-    printf "    %-32s : %s\n" "Shell Login" "$SHELL"
-    printf "    %-32s : %s\n" "Terminal Saat Ini" "$(tty)"
+    local CURRENT_USER=$(id -un)
+    local UID=$(id -u "$CURRENT_USER")
+    local GID=$(id -g "$CURRENT_USER")
+    local PRIMARY_GROUP=$(id -gn "$CURRENT_USER")
+    local OTHER_GROUPS=$(groups "$CURRENT_USER" | cut -d' ' -f4-)
+    local SHELL_PATH="$SHELL"
+    local DISK_USAGE="N/A"
+    if [ -d "$HOME" ]; then read -r DISK_USAGE _ < <(du -sh "$HOME"); fi
+
+    echo -e "${YELLOW}--- Informasi Umum & Disk ---${NC}"
+    local main_table_line="${DIM}+---------------------------+------------------------------------------+${NC}"
+    echo -e "$main_table_line"
+    printf "| ${BOLD}%-25s${NC} | ${BOLD}%-40s${NC} |\n" "INFORMASI PENGGUNA" "DETAIL"
+    echo -e "$main_table_line"
+    printf "| %-25s | ${BRIGHT_GREEN}%-40s${NC} |\n" "Nama User Saat Ini" "$CURRENT_USER"
+    printf "| %-25s | ${CYAN}%-40s${NC} |\n" "User ID (UID)" "$UID"
+    printf "| %-25s | ${CYAN}%-40s${NC} |\n" "Grup Utama" "$PRIMARY_GROUP (GID: $GID)"
+    if [ -n "$OTHER_GROUPS" ]; then printf "| %-25s | %-40.40s |\n" "Anggota Grup Lain" "$OTHER_GROUPS"; fi
+    printf "| %-25s | ${YELLOW}%-40s${NC} |\n" "Direktori Home" "$HOME"
+    printf "| %-25s | %-40s |\n" "Shell Login" "$SHELL_PATH"
+    printf "| %-25s | ${ORANGE}%-40s${NC} |\n" "Penggunaan Disk Home" "$DISK_USAGE"
+    echo -e "$main_table_line"
     echo ""
-    
-    # Ini untuk menampilkan informasi sesi login aktif dari user.
-    echo "    --- Informasi Sesi Login Saat Ini (perintah 'w') ---"
-    if command -v w &> /dev/null; then
-        w $CURRENT_USER | sed 's/^/      /'
+
+    echo -e "${YELLOW}--- Sesi Login Aktif (dari 'w') ---${NC}"
+    if command -v w &> /dev/null && [[ -n $(w -h "$CURRENT_USER") ]]; then
+        local session_table_line="${DIM}+-----------+------------+---------+-------------------------------+"
+        echo -e "$session_table_line${NC}"
+        printf "| ${BOLD}%-9s${NC} | ${BOLD}%-10s${NC} | ${BOLD}%-7s${NC} | ${BOLD}%-29s${NC} |\n" "TTY" "DARI" "LOGIN" "PROSES"
+        echo -e "$session_table_line${NC}"
+        w | grep "^$CURRENT_USER" | while read -r user tty from login_at idle jcpu pcpu what; do
+            printf "| ${GREEN}%-9s${NC} | ${CYAN}%-10s${NC} | %-7s | %-29.29s |\n" "$tty" "$from" "$login_at" "$what"
+        done
+        echo -e "$session_table_line${NC}"
     else
-        echo "      Perintah 'w' tidak ditemukan."
+        echo -e "  ${DIM}(Tidak ada sesi login aktif atau perintah 'w' tidak ditemukan)${NC}"
     fi
     echo ""
-    
-    # Ini untuk menampilkan 5 riwayat login terakhir dari user.
-    echo "    --- Riwayat Login Terakhir (5 entri untuk user $CURRENT_USER) ---"
-    if command -v last &> /dev/null; then
-        last -n 5 $CURRENT_USER | sed 's/^/      /'
+
+    echo -e "${YELLOW}--- 5 Riwayat Login Terakhir (dari 'last') ---${NC}"
+    if command -v last &> /dev/null && [[ -n $(last -n 5 "$CURRENT_USER" | head -n -2) ]]; then
+        local hist_table_line="${DIM}+-----------------------+-----------+----------------------+"
+        echo -e "$hist_table_line${NC}"
+        printf "| ${BOLD}%-21s${NC} | ${BOLD}%-9s${NC} | ${BOLD}%-20s${NC} |\n" "WAKTU LOGIN" "TTY" "DARI"
+        echo -e "$hist_table_line${NC}"
+        last -n 5 "$CURRENT_USER" | head -n -2 | while read -r _ tty from day mon date time rest; do
+             local login_time=$(printf "%s %s %s %s" "$day" "$mon" "$date" "$time")
+             printf "| ${MAGENTA}%-21.21s${NC} | ${GREEN}%-9s${NC} | ${CYAN}%-20.20s${NC} |\n" "$login_time" "$tty" "$from"
+        done
+        echo -e "$hist_table_line${NC}"
     else
-        echo "      Perintah 'last' tidak ditemukan."
+        echo -e "  ${DIM}(Tidak ada riwayat login atau perintah 'last' tidak ditemukan)${NC}"
+    fi
+    
+    echo -e "${DIM}=====================================================================${NC}"
+    echo ""
+}
+
+# Fungsi untuk menampilkan detail Sistem Operasi (PERBAIKAN TABEL DISK)
+informasi_sistem() {
+    clear
+    tampilkan_judul "Detail OS"
+    echo -e "${DIM}=============================================================================${NC}"
+
+    local os_name="N/A"; local os_version="N/A"
+    if [ -f /etc/os-release ]; then . /etc/os-release; os_name=$NAME; os_version=$VERSION; fi
+    local kernel_version=$(uname -r); local arch=$(uname -m)
+    local cpu_user="N/A"; local cpu_system="N/A"; local cpu_idle="N/A"
+    if command -v top &> /dev/null; then
+        local cpu_info=$(top -b -n 1 | grep '%Cpu(s)')
+        cpu_user=$(echo "$cpu_info" | awk '{print $2}'); cpu_system=$(echo "$cpu_info" | awk '{print $4}'); cpu_idle=$(echo "$cpu_info" | awk '{print $8}')
+    fi
+
+    echo -e "${YELLOW}--- Info Umum Sistem & CPU ---${NC}"
+    local table_line_1="${DIM}+-------------------------+------------------------------------------+${NC}"
+    echo -e "$table_line_1"
+    printf "| ${BOLD}%-23s${NC} | ${BOLD}%-40s${NC} |\n" "INFORMASI" "DETAIL"
+    echo -e "$table_line_1"
+    printf "| %-23s | ${BRIGHT_BLUE}%-40s${NC} |\n" "Nama OS" "$os_name"
+    printf "| %-23s | %-40s |\n" "Versi" "$os_version"
+    printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Versi Kernel" "$kernel_version"
+    printf "| %-23s | %-40s |\n" "Arsitektur" "$arch"
+    printf "| %-23s | ${GREEN}%s%%${NC}\n" "CPU - Penggunaan User" "$(printf "%-38s" "$cpu_user")"
+    printf "| %-23s | ${ORANGE}%s%%${NC}\n" "CPU - Penggunaan System" "$(printf "%-38s" "$cpu_system")"
+    printf "| %-23s | %s%%\n" "CPU - Idle" "$(printf "%-38s" "$cpu_idle")"
+    echo -e "$table_line_1"
+    echo ""
+
+    echo -e "${YELLOW}--- Penggunaan Memori ---${NC}"
+    if command -v free &> /dev/null; then
+        local mem_line="${DIM}+-------+---------+---------+---------+------------+-----------+${NC}"
+        echo -e "$mem_line"
+        printf "| ${BOLD}%-5s${NC} | ${BOLD}%-7s${NC} | ${BOLD}%-7s${NC} | ${BOLD}%-7s${NC} | ${BOLD}%-10s${NC} | ${BOLD}%-9s${NC} |\n" "Tipe" "Total" "Digunakan" "Bebas" "Shared" "Available"
+        echo -e "$mem_line"
+        free -h | grep -E "^Mem" | awk '{printf "| %-5s | %-7s | %-7s | %-7s | %-10s | %-9s |\n", $1, $2, $3, $4, $5, $7}'
+        free -h | grep -E "^Swap" | awk '{printf "| %-5s | %-7s | %-7s | %-7s | %-10s | %-9s |\n", $1, $2, $3, $4, "--", "--"}'
+        echo -e "$mem_line"
+    else
+        echo -e "  ${RED}Perintah 'free' tidak ditemukan.${NC}"
     fi
     echo ""
-    
-    # Ini untuk menampilkan total penggunaan disk pada direktori home user.
-    echo "    --- Penggunaan Disk oleh User di Direktori Home ---"
-    if [ -d "$HOME" ]; then
-        du -sh "$HOME" | awk '{printf "      Total Penggunaan: %s\tDirektori: %s\n", $1, $2}'
+
+    echo -e "${YELLOW}--- Penggunaan Disk ---${NC}"
+    if command -v df &> /dev/null; then
+        local disk_line="${DIM}+-------------------------+---------+---------+---------+------+--------------------------------+${NC}"
+        echo -e "$disk_line"
+        printf "| ${BOLD}%-23s${NC} | ${BOLD}%-7s${NC} | ${BOLD}%-7s${NC} | ${BOLD}%-7s${NC} | ${BOLD}%-4s${NC} | ${BOLD}%-30s${NC} |\n" "Filesystem" "Ukuran" "Digunakan" "Tersedia" "Guna%" "Di-mount di"
+        echo -e "$disk_line"
+        df -h -x squashfs -x tmpfs -x devtmpfs | tail -n +2 | while read -r fs size used avail usepct mount; do
+            local use_val=${usepct//%/}
+            local use_color="$GREEN"
+            if (( use_val >= 85 )); then use_color="$BRIGHT_RED"; elif (( use_val >= 60 )); then use_color="$YELLOW"; fi
+            printf "| %-23s | %-7s | %-7s | %-7s | ${use_color}%-4s${NC} | ${CYAN}%-30.30s${NC} |\n" "$fs" "$size" "$used" "$avail" "$usepct" "$mount"
+        done
+        echo -e "$disk_line"
     else
-        echo "      Direktori home ($HOME) tidak ditemukan."
+        echo -e "  ${RED}Perintah 'df' tidak ditemukan.${NC}"
     fi
-    echo "============================================================"
+    
+    echo -e "${DIM}=============================================================================${NC}"
+    echo ""
+}
+
+# Fungsi untuk menampilkan waktu sistem (VERSI TABEL SIMETRIS)
+informasi_waktu_sistem() {
+    clear
+    tampilkan_judul "Waktu Sistem"
+    
+    local waktu_boot="N/A"; local durasi_up="N/A"
+    if command -v uptime &> /dev/null; then
+        waktu_boot=$(uptime -s); durasi_up=$(uptime -p | sed 's/up //'); fi
+
+    local install_date="N/A"; local install_source="Tidak dapat ditentukan"
+    local sudo_cmd=""; if [[ $EUID -ne 0 ]]; then sudo_cmd="sudo"; fi
+
+    local files_to_check=("/var/log/installer/syslog" "/var/log/installer/cloud-init.log" "/var/log/anaconda/ks.cfg" "/var/log/pacman.log")
+    for file in "${files_to_check[@]}"; do
+        if [ -f "$file" ]; then
+            local stat_output; stat_output=$($sudo_cmd stat -c "%y" "$file" 2>/dev/null)
+            if [ -n "$stat_output" ]; then
+                install_date=$(echo "$stat_output" | awk '{print $1, $2}'); install_source="$file"; break; fi
+        fi
+    done
+
+    if [[ "$install_date" == "N/A" ]] && command -v tune2fs &>/dev/null; then
+        local root_device=$(df / | tail -n 1 | awk '{print $1}')
+        local fs_creation; fs_creation=$($sudo_cmd tune2fs -l "$root_device" 2>/dev/null | grep 'Filesystem created:')
+        if [ -n "$fs_creation" ]; then
+            install_date=$(echo "$fs_creation" | sed 's/Filesystem created://g' | awk '{$1=$1};1')
+            install_source="Waktu pembuatan partisi ($root_device)"
+        fi
+    fi
+
+    echo ""
+    if [[ $EUID -ne 0 && "$install_date" != "N/A" && "$install_source" != "Tidak dapat ditentukan" ]]; then
+        echo -e "${DIM}Info waktu instalasi mungkin memerlukan hak akses root (sudo)...${NC}"
+        echo ""
+    fi
+
+    local table_line="${DIM}+---------------------------+------------------------------------------+${NC}"
+    local separator_line="${DIM}|---------------------------+------------------------------------------|${NC}"
+
+    echo -e "$table_line"
+    printf "| ${BOLD}${YELLOW}%-25s${NC} | ${BOLD}${YELLOW}%-40s${NC} |\n" "INFORMASI WAKTU" "DETAIL"
+    echo -e "$table_line"
+    printf "| %-25s | ${CYAN}%-40s${NC} |\n" "Waktu Boot Terakhir" "$waktu_boot"
+    printf "| %-25s | ${GREEN}%-40s${NC} |\n" "Telah Berjalan Selama" "$durasi_up"
+    echo -e "$separator_line"
+    printf "| %-25s | ${MAGENTA}%-40s${NC} |\n" "Perkiraan Waktu Instal" "$install_date"
+    printf "| %-25s | ${DIM}%-40s${NC} |\n" "Sumber Data Instalasi" "$install_source"
+    echo -e "$table_line"
+    echo ""
+    echo -e "${DIM}=====================================================================${NC}"
     echo ""
 }
 
@@ -264,85 +432,80 @@ informasi_user() {
 # PROGRAM UTAMA (MENU)
 # ==============================================================================
 
-clear # Ini untuk membersihkan layar saat program pertama kali dijalankan.
-# Ini adalah loop utama program agar menu terus ditampilkan.
+clear
 while true; do
-    clear # Ini untuk membersihkan layar di setiap awal perulangan menu.
-    tampilkan_judul "Menu Biasa Aja" # Ini untuk menampilkan judul utama aplikasi.
-    echo ""
+    clear
+    tampilkan_judul "Menu Biasa Aja"
 
-    # Ini adalah variabel untuk mengatur lebar konten menu.
     menu_content_width=35
-    # Ini untuk menghitung total lebar tabel menu.
     total_line_width=$((menu_content_width + 4))
 
-    # Ini adalah fungsi lokal untuk mencetak garis horizontal pada tabel menu.
     print_horizontal_line() {
-        printf "+%.0s" $(seq 1 $total_line_width) | tr '0' '-'
+        printf "${DIM}+%.0s${NC}" $(seq 1 $total_line_width) | tr '0' '-'
         printf "\n"
     }
 
-    # Ini adalah fungsi lokal untuk mencetak setiap baris pilihan pada tabel menu.
     print_menu_option() {
-        local option_text="$1"
-        printf "| %-*.*s |\n" $menu_content_width $menu_content_width "$option_text"
+        local number=$(echo "$1" | awk '{print $1}')
+        local text=$(echo "$1" | cut -d' ' -f2-)
+        local full_text=" ${YELLOW}${number}${NC} ${text}"
+        printf "${DIM}|${NC}${full_text}"
+        # Kalkulasi padding manual karena ada kode warna di dalam string
+        local visible_length=$((2 + ${#number} + ${#text}))
+        local padding=$(($menu_content_width - visible_length))
+        printf "%${padding}s" " "
+        printf "${DIM}|${NC}\n"
     }
     
-    # Ini untuk menampilkan kotak menu beserta opsinya. (Sudah diperbarui)
+    # Menampilkan menu
     print_horizontal_line
-    print_menu_option " 1. Greeting User"
-    print_menu_option " 2. Inpo Jaringan"
-    print_menu_option " 3. Inpo User"
-    print_menu_option " 4. Exit Program"
+    print_menu_option "1. Greeting User"
+    print_menu_option "2. Info Daftar Direktori"
+    print_menu_option "3. Info Jaringan"
+    print_menu_option "4. Info OS"
+    print_menu_option "5. Waktu Install OS"
+    print_menu_option "6. Info User"
+    print_menu_option "7. Exit Program"
     print_horizontal_line
     echo ""
 
-    # Ini untuk meminta input dari pengguna. (Sudah diperbarui)
-    printf "%*s" $(( (total_line_width - 22) / 2 )) ""
-    read -p "Pilih opsi [1-4]: " pilihan
+    # Prompt input
+    read -p "$(echo -e "${BRIGHT_YELLOW}Pilih opsi [1-7]: ${NC}")" pilihan
 
-    # Ini untuk memproses pilihan yang diinput oleh pengguna. (Sudah diperbarui)
     case $pilihan in
-        1)
-            sapa_pengguna
-            lebar_prompt=$(tput cols 2>/dev/null || echo 80)
-            printf "%*s" $(( (lebar_prompt - 38) / 2 )) ""
-            read -n 1 -s -r -p "Tekan tombol apa saja untuk kembali..."
-            ;;
-        2) 
-            informasi_jaringan
-            lebar_prompt=$(tput cols 2>/dev/null || echo 80)
-            printf "\n%*s" $(( (lebar_prompt - 38) / 2 )) ""
-            read -n 1 -s -r -p "Tekan tombol apa saja untuk kembali..."
-            ;;
-        3) 
-            informasi_user
-            lebar_prompt=$(tput cols 2>/dev/null || echo 80)
-            printf "\n%*s" $(( (lebar_prompt - 38) / 2 )) ""
-            read -n 1 -s -r -p "Tekan tombol apa saja untuk kembali..."
-            ;;
-        4) 
-            # Ini untuk keluar dari program.
+        1) sapa_pengguna; ;;
+        2) daftar_direktori; ;;
+        3) informasi_jaringan; ;;
+        4) informasi_sistem; ;;
+        5) informasi_waktu_sistem; ;;
+        6) informasi_user; ;;
+        7)
             clear
             tampilkan_judul "XIE XIE YA!"
             sleep 2
             clear
             exit 0
             ;;
-        *) 
-            # Ini untuk menangani jika pengguna menginput pilihan yang salah.
+        *)
             clear
             tampilkan_judul "Input Salah!"
             if command -v figlet &> /dev/null; then
-                figlet -c -w 60 "Pilihan '$pilihan' Gak Ada Bang!"
+                echo -e "${BRIGHT_RED}"
+                figlet -w 80 "Pilihan '$pilihan' Gak Ada Bang!"
+                echo -e "${NC}"
             else
-                echo ""
-                echo "    Pilihan '$pilihan' tidak valid! Silakan coba lagi."
+                echo -e "${BRIGHT_RED}Pilihan '$pilihan' tidak valid! Silakan coba lagi.${NC}"
             fi
-            echo ""
-            lebar_prompt=$(tput cols 2>/dev/null || echo 80)
-            printf "%*s" $(( (lebar_prompt - 38) / 2 )) ""
-            read -n 1 -s -r -p "Tekan tombol apa saja untuk lanjut..."
             ;;
     esac
+    
+    # Pause message hanya jika bukan pilihan exit atau invalid
+    if [[ "$pilihan" =~ ^[1-6]$ ]]; then
+        echo ""
+        read -n 1 -s -r -p "$(echo -e "${DIM}Tekan tombol apa saja untuk kembali...${NC}")"
+    # Pause message untuk input salah
+    elif [[ "$pilihan" != "7" ]]; then
+        echo ""
+        read -n 1 -s -r -p "$(echo -e "${DIM}Tekan tombol apa saja untuk lanjut...${NC}")"
+    fi
 done
