@@ -8,13 +8,13 @@
 # kode utama menjadi lebih bersih.
 
 # --- Gaya Teks ---
-# Blok ini berisi kode untuk memberikan format khusus pada teks, tanpa mengubah warnanya
+# Deklarasi ini berisi kode untuk memberikan format khusus pada teks, tanpa mengubah warnanya
 BOLD='\e[1m'         # Variabel untuk membuat teks menjadi tebal (bold)
 DIM='\e[2m'          # Variabel untuk membuat teks menjadi redup (dim/faint)
 UNDERLINE='\e[4m'    # Variabel untuk memberikan garis bawah pada teks
 
 # --- Warna Teks Standar ---
-# Ini adalah 8 warna dasar yang umumnya didukung oleh semua terminal
+# Deklarasi Ini adalah 8 warna dasar yang umumnya didukung oleh semua terminal
 BLACK='\e[30m'       # Kode untuk warna teks hitam
 RED='\e[31m'         # Kode untuk warna teks merah
 GREEN='\e[32m'       # Kode untuk warna teks hijau
@@ -24,7 +24,7 @@ MAGENTA='\e[35m'     # Kode untuk warna teks magenta (ungu)
 CYAN='\e[36m'        # Kode untuk warna teks cyan (biru muda)
 WHITE='\e[37m'       # Kode untuk warna teks putih
 
-# Ini adalah kode warna kustom (jingga/oranye) yang saya ambil dari palet 256 warna
+# Kode ini merupakan delrasi kode warna kustom (jingga/oranye) yang saya ambil dari palet 256 warna
 # agar tampilannya lebih unik dibandingkan warna standar
 ORANGE='\e[38;5;208m' 
 
@@ -47,20 +47,15 @@ NC='\e[0m' # No Color - kembali ke default
 # FUNGSI-FUNGSI PEMBANTU
 # ==============================================================================
 
-# ==============================================================================
-# FUNGSI-FUNGSI PEMBANTU
-# ==============================================================================
-
 # FUNGSI: tampilkan_judul
 # TUJUAN: Mencetak judul dengan gaya ciamik di terminal
 # ARGUMEN: $1 -> Teks yang ingin dijadikan judul
-
 # Fungsi untuk menampilkan judul
 tampilkan_judul() {
     # Langkah pertama, apakah perintah 'figlet' ada di sistem
     # Redirect output &> /dev/null ini untuk menyembunyikan pesan jika 'figlet' tidak ada
     if command -v figlet &> /dev/null; then
-        # Jika 'figlet' ditemukan, saya akan menggunakannya untuk output yang lebih keren
+        # Jika 'figlet' ditemukan, saya akan menggunakannya untuk output yang lebih baik
         # Mengatur warna teks menjadi Cyan Cerah sebelum mencetak judul
         printf "${BRIGHT_CYAN}"
         # Memanggil figlet untuk mengubah teks dari argumen pertama ($1) menjadi seni ASCII dengan font slant
@@ -92,7 +87,6 @@ tampilkan_judul() {
 # FUNGSI: sapa_pengguna
 # TUJUAN: Menampilkan layar sapaan pembuka yang ramah kepada pengguna
 #         Isinya berupa ucapan selamat sesuai waktu dan rangkuman info dasar
-
 # Fungsi untuk menampilkan sapaan dan waktu
 sapa_pengguna() {
     # Membersihkan layar terminal terlebih dahulu agar tampilan bersih
@@ -168,7 +162,6 @@ sapa_pengguna() {
 # FUNGSI: informasi_jaringan
 # TUJUAN: Menampilkan rangkuman lengkap mengenai status dan konfigurasi jaringan
 #         Mulai dari koneksi internet, detail interface, hingga IP publik dan lokal
-
 # Fungsi untuk menampilkan informasi jaringan
 informasi_jaringan() {
     # Membersihkan layar dan menampilkan judul untuk bagian ini
@@ -286,7 +279,6 @@ informasi_jaringan() {
 # FUNGSI: daftar_direktori
 # TUJUAN: Menampilkan isi dari direktori saat ini dalam format tabel yang detail
 #         Mirip seperti perintah 'ls -l', tapi dengan tampilan yang lebih rapi dan berwarna
-
 # Fungsi untuk menampilkan isi direktori saat ini (VERSI TABEL SIMETRIS)
 daftar_direktori() {
     # Membersihkan layar dan menampilkan judul untuk bagian ini
@@ -361,7 +353,6 @@ daftar_direktori() {
 # FUNGSI: informasi_user
 # TUJUAN: Menampilkan semua informasi relevan tentang pengguna yang sedang aktif
 #         Informasi mencakup data dasar, sesi login, dan riwayat login
-
 # Fungsi untuk menampilkan informasi pengguna
 informasi_user() {
     # Membersihkan layar dan menampilkan judul untuk bagian ini
@@ -458,7 +449,6 @@ informasi_user() {
 # FUNGSI: informasi_sistem
 # TUJUAN: Menampilkan ringkasan teknis dari sistem operasi secara menyeluruh
 #         Mencakup info OS, CPU, memori, dan penggunaan disk dalam format tabel
-
 # Fungsi untuk menampilkan detail Sistem Operasi
 informasi_sistem() {
     # Membersihkan layar dan menampilkan judul untuk bagian ini
@@ -522,7 +512,7 @@ informasi_sistem() {
         echo -e "$mem_line"
         # Mengambil info memori utama, lalu memformatnya langsung dengan awk agar pas di tabel
         free -h | grep -E "^Mem" | awk '{printf "| %-5s | %-7s | %-7s | %-7s | %-10s | %-9s |\n", $1, $2, $3, $4, $5, $7}'
-        # Mengambil info swap, lalu memformatnya juga
+        # PERBAIKAN: Format string untuk Swap disamakan dengan header agar simetris
         free -h | grep -E "^Swap" | awk '{printf "| %-5s | %-7s | %-7s | %-7s | %-10s | %-9s |\n", $1, $2, $3, $4, "--", "--"}'
         echo -e "$mem_line"
     else
@@ -547,8 +537,13 @@ informasi_sistem() {
             # Menentukan warna berdasarkan persentase penggunaan
             local use_color="$GREEN" # Warna default hijau
             if (( use_val >= 85 )); then use_color="$BRIGHT_RED"; elif (( use_val >= 60 )); then use_color="$YELLOW"; fi
-            # Mencetak baris data disk dengan warna yang sesuai
-            printf "| %-23s | %-7s | %-7s | %-7s | ${use_color}%-4s${NC} | ${CYAN}%-30.30s${NC} |\n" "$fs" "$size" "$used" "$avail" "$usepct" "$mount"
+            
+            # PERBAIKAN: Padding dan pewarnaan ditangani secara manual untuk menjaga kesejajaran
+            local padded_usepct=$(printf "%-4s" "$usepct")
+            local padded_mount=$(printf "%-30.30s" "$mount")
+            
+            # Mencetak baris data disk dengan warna yang sesuai dan padding yang benar
+            printf "| %-23s | %-7s | %-7s | %-7s | ${use_color}%s${NC} | ${CYAN}%s${NC} |\n" "$fs" "$size" "$used" "$avail" "$padded_usepct" "$padded_mount"
         done
         echo -e "$disk_line"
     else
@@ -564,7 +559,6 @@ informasi_sistem() {
 # FUNGSI: informasi_waktu_sistem
 # TUJUAN: Menampilkan informasi waktu penting terkait sistem
 #         Mencakup waktu boot terakhir, durasi uptime, dan perkiraan waktu instalasi OS
-
 # Fungsi untuk menampilkan waktu sistem (VERSI TABEL SIMETRIS)
 informasi_waktu_sistem() {
     # Membersihkan layar dan menampilkan judul untuk bagian ini
@@ -694,8 +688,8 @@ while true; do
         
         # Mencetak garis vertikal kiri
         printf "${DIM}│${NC}"
-        # Mencetak teks opsi menu
-        printf "%s" "$full_text"
+        # PERBAIKAN: Menggunakan 'echo -e' untuk menginterpretasikan kode warna
+        echo -ne "$full_text"
         
         # Menghitung panjang teks yang terlihat (tanpa kode warna) untuk padding
         # Ini penting agar posisi garis vertikal kanan selalu rata
