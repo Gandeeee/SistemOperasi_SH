@@ -4,8 +4,7 @@
 # DEFINISI WARNA (ANSI ESCAPE CODES)
 # ==============================================================================
 # Di bagian ini, saya mendefinisikan semua variabel yang akan saya gunakan untuk 
-# memberikan warna dan gaya pada output teks di terminal linu Dengan cara ini,
-# kode utama menjadi lebih bersih.
+# memberikan warna dan gaya pada output teks di terminal linu
 
 # --- Gaya Teks ---
 # Deklarasi ini berisi kode untuk memberikan format khusus pada teks, tanpa mengubah warnanya
