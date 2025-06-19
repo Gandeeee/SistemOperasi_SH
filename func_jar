@@ -1,0 +1,218 @@
+# FUNGSI: informasi_jaringan (VERSI DIPERBAIKI)
+# TUJUAN: Menampilkan rangkuman lengkap mengenai status dan konfigurasi jaringan
+#         Mulai dari koneksi internet, detail interface, hingga IP publik dan lokal dengan netmask
+# Fungsi untuk menampilkan informasi jaringan
+informasi_jaringan() {
+    # Membersihkan layar dan menampilkan judul untuk bagian ini
+    clear
+    tampilkan_judul "Info Jaringan"
+    # Mencetak garis pembatas atas
+    echo -e "${DIM}=====================================================================${NC}"
+    
+    # Bagian 1: Melakukan pengecekan koneksi internet secara cepat
+    # Mencetak label status
+    printf "%-30s: " "Status Koneksi Internet"
+    # Melakukan ping ke server DNS Google atau Cloudflare sebagai target
+    # -c 1 untuk mengirim satu paket saja, -W 1 untuk timeout 1 detik agar tidak lama menunggu
+    # Tanda '||' berarti jika ping pertama gagal, coba ping kedua
+    # '&> /dev/null' digunakan untuk menyembunyikan semua output dari perintah ping
+    if ping -c 1 -W 1 8.8.8.8 &> /dev/null || ping -c 1 -W 1 1.1.1.1 &> /dev/null; then
+        # Jika salah satu ping berhasil, tampilkan status terhubung
+        echo -e "${BRIGHT_GREEN}✔ Terhubung${NC}"
+    else
+        # Jika keduanya gagal, tampilkan status putus
+        echo -e "${BRIGHT_RED}❌ Putus / Tidak Terhubung${NC}"
+    fi
+    echo ""
+    
+    # Bagian 2: Menampilkan status detail untuk setiap koneksi seperti Wi-Fi atau LAN
+    # Mencetak sub-judul untuk bagian ini
+    echo -e "${YELLOW}--- Status Koneksi LAN / Wi-Fi ---${NC}"
+    # Memeriksa apakah perintah 'nmcli' (NetworkManager) ada di sistem
+    if command -v nmcli &> /dev/null; then
+        # Jika ada, saya akan gunakan untuk menampilkan tabel status koneksi
+        local table_line="${DIM}+-----------------+------------+---------------+--------------------------+${NC}"
+        echo -e "$table_line"
+        printf "| ${BOLD}%-15s${NC} | ${BOLD}%-10s${NC} | ${BOLD}%-13s${NC} | ${BOLD}%-24s${NC} |\n" "DEVICE" "TYPE" "STATE" "CONNECTION"
+        echo -e "$table_line"
+        # Mengambil data dari nmcli, membuang baris 'loopback', dan memprosesnya baris per baris
+        nmcli -t -f DEVICE,TYPE,STATE,CONNECTION dev status | grep -v 'loopback' | while IFS=: read -r device type state connection; do
+            # Jika nama koneksi kosong, ganti dengan '--'
+            if [[ -z "$connection" ]]; then connection="--"; fi
+            # Logika untuk memberi warna pada status koneksi
+            local state_color="$NC"
+            if [[ "$state" == "connected" ]]; then state_color="${GREEN}"; elif [[ "$state" == "disconnected" ]]; then state_color="${RED}"; fi
+            # Mencetak baris data ke dalam tabel
+            printf "| ${CYAN}%-15s${NC} | %-10s | ${state_color}%-13s${NC} | ${BRIGHT_GREEN}%-24s${NC} |\n" "$device" "$type" "$state" "$connection"
+        done
+        echo -e "$table_line"
+    else
+        # Jika 'nmcli' tidak ada, tampilkan pesan informasi
+        echo -e "${RED}Perintah 'nmcli' tidak ditemukan. Fitur ini memerlukan NetworkManager.${NC}"
+    fi
+    echo ""
+    
+    # Bagian 3: Mengambil dan menampilkan data konfigurasi umum dan info IP Publik
+    # Mengambil alamat Gateway dari routing table
+    local GATEWAY=$(ip route | grep '^default' | awk '{print $3}')
+    # Membaca semua server DNS dari file /etc/resolv.conf
+    readarray -t DNS_SERVERS < <(grep "^nameserver" /etc/resolv.conf 2>/dev/null | awk '{print $2}')
+    
+    # PERBAIKAN: Mengambil alamat IP Publik dari layanan eksternal dengan error handling yang lebih baik
+    local PUBLIC_IP=""
+    if command -v curl &> /dev/null; then 
+        # Mencoba beberapa layanan berbeda jika yang pertama gagal
+        PUBLIC_IP=$(curl -s --max-time 5 api.ipify.org 2>/dev/null) || \
+        PUBLIC_IP=$(curl -s --max-time 5 ifconfig.me 2>/dev/null) || \
+        PUBLIC_IP=$(curl -s --max-time 5 checkip.amazonaws.com 2>/dev/null | tr -d '\n')
+    fi
+    
+    # PERBAIKAN: Menyiapkan variabel untuk informasi lokasi geografis dari IP Publik
+    local CITY="N/A" REGION="N/A" COUNTRY="N/A" ORG="N/A" TIMEZONE="N/A" POSTAL="N/A"
+    
+    # Jika IP Publik berhasil didapatkan, lanjutkan mengambil info lokasi
+    if [[ -n "$PUBLIC_IP" && "$PUBLIC_IP" != "" ]]; then
+        echo -e "${DIM}Mengambil informasi lokasi...${NC}"
+        # PERBAIKAN: Mengambil data lokasi dengan layanan yang lebih reliable
+        # Mencoba beberapa API berbeda untuk mendapatkan informasi lokasi
+        local LOCATION_INFO_JSON=""
+        
+        # API 1: ipinfo.io (gratis, 50k request/bulan tanpa token)
+        LOCATION_INFO_JSON=$(curl -s --max-time 10 "https://ipinfo.io/$PUBLIC_IP/json" 2>/dev/null)
+        
+        # Jika API pertama gagal, coba API kedua
+        if [[ -z "$LOCATION_INFO_JSON" || "$LOCATION_INFO_JSON" == *"error"* ]]; then
+            # API 2: ip-api.com (gratis, 1000 request/jam)
+            LOCATION_INFO_JSON=$(curl -s --max-time 10 "http://ip-api.com/json/$PUBLIC_IP" 2>/dev/null)
+            
+            # Parsing untuk format ip-api.com (format berbeda)
+            if [[ -n "$LOCATION_INFO_JSON" && "$LOCATION_INFO_JSON" != *"fail"* ]]; then
+                CITY=$(echo "$LOCATION_INFO_JSON" | grep -oP '"city":\s*"\K[^"]*')
+                REGION=$(echo "$LOCATION_INFO_JSON" | grep -oP '"regionName":\s*"\K[^"]*')
+                COUNTRY=$(echo "$LOCATION_INFO_JSON" | grep -oP '"country":\s*"\K[^"]*')
+                ORG=$(echo "$LOCATION_INFO_JSON" | grep -oP '"isp":\s*"\K[^"]*')
+                TIMEZONE=$(echo "$LOCATION_INFO_JSON" | grep -oP '"timezone":\s*"\K[^"]*')
+                POSTAL=$(echo "$LOCATION_INFO_JSON" | grep -oP '"zip":\s*"\K[^"]*')
+            fi
+        else
+            # Parsing untuk format ipinfo.io
+            CITY=$(echo "$LOCATION_INFO_JSON" | grep -oP '"city":\s*"\K[^"]*')
+            REGION=$(echo "$LOCATION_INFO_JSON" | grep -oP '"region":\s*"\K[^"]*')
+            COUNTRY=$(echo "$LOCATION_INFO_JSON" | grep -oP '"country":\s*"\K[^"]*')
+            ORG=$(echo "$LOCATION_INFO_JSON" | grep -oP '"org":\s*"\K[^"]*')
+            TIMEZONE=$(echo "$LOCATION_INFO_JSON" | grep -oP '"timezone":\s*"\K[^"]*')
+            POSTAL=$(echo "$LOCATION_INFO_JSON" | grep -oP '"postal":\s*"\K[^"]*')
+        fi
+    fi
+    
+    # Menampilkan data yang sudah terkumpul di atas ke dalam tabel
+    echo -e "${YELLOW}--- Konfigurasi Umum & IP Publik ---${NC}"
+    local config_line="${DIM}+-------------------------+------------------------------------------+${NC}"
+    echo -e "$config_line"
+    printf "| ${BOLD}%-23s${NC} | ${BOLD}%-40s${NC} |\n" "INFORMASI" "DETAIL"
+    echo -e "$config_line"
+    # Menggunakan ":-Tidak Ditemukan" sebagai nilai default jika variabel GATEWAY kosong
+    printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Gateway Utama" "${GATEWAY:-Tidak Ditemukan}"
+    # Looping untuk menampilkan semua server DNS yang ditemukan
+    local i=1
+    for dns in "${DNS_SERVERS[@]}"; do
+        printf "| %-23s | ${CYAN}%-40s${NC} |\n" "DNS Server $i" "$dns"
+        i=$((i+1))
+    done
+    printf "| %-23s | ${BRIGHT_GREEN}%-40s${NC} |\n" "IP Publik" "${PUBLIC_IP:-Tidak Terhubung}"
+    
+    # PERBAIKAN: Menampilkan informasi lokasi yang lebih lengkap
+    if [[ -n "$PUBLIC_IP" && "$PUBLIC_IP" != "" ]]; then
+        printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Kota" "${CITY:-N/A}"
+        printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Provinsi/Negara Bagian" "${REGION:-N/A}"
+        printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Negara" "${COUNTRY:-N/A}"
+        printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Kode Pos" "${POSTAL:-N/A}"
+        printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Zona Waktu" "${TIMEZONE:-N/A}"
+        printf "| %-23s | ${CYAN}%-40s${NC} |\n" "Provider/ISP" "${ORG:-N/A}"
+    fi
+    echo -e "$config_line"
+    echo ""
+    
+    # PERBAIKAN: Bagian 4 - Menampilkan tabel berisi semua alamat IP lokal dengan NETMASK
+    echo -e "${YELLOW}--- Alamat IP Lokal dengan Netmask ---${NC}"
+    local ip_table_line="${DIM}+-----------------+------------------+------------------+${NC}"
+    echo -e "$ip_table_line"
+    printf "| ${BOLD}%-15s${NC} | ${BOLD}%-16s${NC} | ${BOLD}%-16s${NC} |\n" "INTERFACE" "ALAMAT IP" "NETMASK/CIDR"
+    echo -e "$ip_table_line"
+    
+    # Mengambil daftar alamat IP dengan CIDR, lalu memprosesnya satu per satu
+    ip -4 addr show scope global | awk '/inet / {print $NF, $2}' | while read -r interface ip_cidr; do
+        # Memisahkan IP dan CIDR
+        local ip_clean=$(echo "$ip_cidr" | cut -d'/' -f1)
+        local cidr=$(echo "$ip_cidr" | cut -d'/' -f2)
+        
+        # PERBAIKAN: Konversi CIDR ke format netmask tradisional
+        local netmask=""
+        case $cidr in
+            8)  netmask="255.0.0.0" ;;
+            16) netmask="255.255.0.0" ;;
+            24) netmask="255.255.255.0" ;;
+            25) netmask="255.255.255.128" ;;
+            26) netmask="255.255.255.192" ;;
+            27) netmask="255.255.255.224" ;;
+            28) netmask="255.255.255.240" ;;
+            29) netmask="255.255.255.248" ;;
+            30) netmask="255.255.255.252" ;;
+            *)  netmask="/$cidr" ;;  # Jika tidak umum, tampilkan CIDR saja
+        esac
+        
+        # Menampilkan netmask dalam format yang lebih user-friendly
+        local display_mask="$netmask"
+        if [[ "$netmask" != "/$cidr" ]]; then
+            display_mask="$netmask (/$cidr)"
+        fi
+        
+        # Mencetak interface, alamat IP, dan netmask ke dalam tabel
+        printf "| ${CYAN}%-15s${NC} | ${GREEN}%-16s${NC} | ${YELLOW}%-16s${NC} |\n" "$interface" "$ip_clean" "$display_mask"
+    done
+    echo -e "$ip_table_line"
+    
+    # PERBAIKAN: Menambahkan informasi tambahan tentang interface aktif
+    echo ""
+    echo -e "${YELLOW}--- Status Interface Network ---${NC}"
+    local status_line="${DIM}+-----------------+----------+------------+-------------------+${NC}"
+    echo -e "$status_line"
+    printf "| ${BOLD}%-15s${NC} | ${BOLD}%-8s${NC} | ${BOLD}%-10s${NC} | ${BOLD}%-17s${NC} |\n" "INTERFACE" "STATUS" "KECEPATAN" "MAC ADDRESS"
+    echo -e "$status_line"
+    
+    # Menampilkan status setiap interface network
+    for interface in $(ip link show | awk -F': ' '/^[0-9]+:/ {print $2}' | grep -v lo); do
+        # Mendapatkan status interface (UP/DOWN)
+        local status=$(ip link show "$interface" | grep -oP 'state \K\w+')
+        
+        # Mendapatkan MAC address
+        local mac=$(ip link show "$interface" | grep -oP 'link/ether \K[a-f0-9:]+')
+        
+        # Mendapatkan kecepatan interface (jika tersedia)
+        local speed="N/A"
+        if [ -f "/sys/class/net/$interface/speed" ]; then
+            local speed_mbps=$(cat "/sys/class/net/$interface/speed" 2>/dev/null)
+            if [[ "$speed_mbps" =~ ^[0-9]+$ ]]; then
+                if [ "$speed_mbps" -ge 1000 ]; then
+                    speed="$((speed_mbps/1000))Gbps"
+                else
+                    speed="${speed_mbps}Mbps"
+                fi
+            fi
+        fi
+        
+        # Menentukan warna status
+        local status_color="$RED"
+        if [[ "$status" == "UP" ]]; then
+            status_color="$GREEN"
+        fi
+        
+        # Mencetak informasi interface
+        printf "| ${CYAN}%-15s${NC} | ${status_color}%-8s${NC} | %-10s | ${DIM}%-17s${NC} |\n" "$interface" "$status" "$speed" "${mac:-N/A}"
+    done
+    echo -e "$status_line"
+    
+    # Mencetak garis pembatas akhir halaman
+    echo -e "${DIM}=====================================================================${NC}"
+    echo ""
+}
